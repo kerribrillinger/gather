@@ -4,8 +4,8 @@ import {
   Switch, StyleSheet, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useApp, useTheme } from '../AppContext';
-import { RADIUS, SHADOW } from '../theme';
+import { useApp, useTheme, useFont } from '../AppContext';
+import { RADIUS, SHADOW, PALETTES, FONT_OPTIONS } from '../theme';
 
 const SECTION_LABELS = {
   work:      { label: 'On Your Plate',      hint: 'Tasks section on home & nav' },
@@ -19,7 +19,8 @@ export default function SettingsScreen() {
   const C = useTheme();
   const [nameInput, setNameInput] = useState(state.userName || '');
 
-  const styles = useMemo(() => makeStyles(C), [C]);
+  const F = useFont();
+  const styles = useMemo(() => makeStyles(C, F), [C, F]);
 
   function saveName() {
     setState((s) => ({ ...s, userName: nameInput.trim() }));
@@ -94,6 +95,47 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* Appearance */}
+        <Text style={[styles.sectionLabel, { marginTop: 28 }]}>APPEARANCE</Text>
+
+        <Text style={styles.subsectionLabel}>COLOUR PALETTE</Text>
+        <View style={styles.paletteRow}>
+          {Object.entries(PALETTES).map(([key, palette]) => (
+            <TouchableOpacity
+              key={key}
+              style={[styles.paletteSwatch, { backgroundColor: palette.swatch }, state.palette === key && styles.paletteSwatchActive]}
+              onPress={() => setState((s) => ({ ...s, palette: key }))}
+            >
+              {state.palette === key && <Text style={styles.paletteSwatchCheck}>✓</Text>}
+            </TouchableOpacity>
+          ))}
+        </View>
+        <View style={styles.paletteLabels}>
+          {Object.entries(PALETTES).map(([key, palette]) => (
+            <Text key={key} style={[styles.paletteLabel, state.palette === key && { color: C.accent, fontWeight: '700' }]}>
+              {palette.label}
+            </Text>
+          ))}
+        </View>
+
+        <Text style={[styles.subsectionLabel, { marginTop: 20 }]}>FONT STYLE</Text>
+        <View style={styles.fontRow}>
+          {Object.entries(FONT_OPTIONS).map(([key, font]) => (
+            <TouchableOpacity
+              key={key}
+              style={[styles.fontBtn, state.fontStyle === key && styles.fontBtnActive]}
+              onPress={() => setState((s) => ({ ...s, fontStyle: key }))}
+            >
+              <Text style={[styles.fontBtnSample, font.body ? { fontFamily: font.body } : {}, state.fontStyle === key && { color: C.accent }]}>
+                Aa
+              </Text>
+              <Text style={[styles.fontBtnLabel, state.fontStyle === key && { color: C.accent, fontWeight: '700' }]}>
+                {font.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
         {/* Sections */}
         <Text style={[styles.sectionLabel, { marginTop: 28 }]}>SECTIONS</Text>
         <Text style={styles.sectionHint}>Choose what appears on your home screen and bottom nav.</Text>
@@ -157,12 +199,12 @@ export default function SettingsScreen() {
   );
 }
 
-function makeStyles(C) {
+function makeStyles(C, F = {}) {
   return StyleSheet.create({
     safe:            { flex: 1, backgroundColor: C.bg },
     scroll:          { flex: 1 },
     content:         { padding: 20 },
-    pageTitle:       { fontSize: 32, fontWeight: '700', color: C.text, marginBottom: 24 },
+    pageTitle:       { fontSize: 32, fontWeight: '700', color: C.text, marginBottom: 24, fontFamily: F.heading },
     sectionLabel:    { fontSize: 11, fontWeight: '700', color: C.textMuted, letterSpacing: 0.8, marginBottom: 8 },
     sectionHint:     { fontSize: 13, color: C.textMuted, marginBottom: 12, marginTop: -4 },
     card:            { backgroundColor: C.bgCard, borderRadius: RADIUS.lg, ...SHADOW.card, overflow: 'hidden' },
@@ -176,8 +218,21 @@ function makeStyles(C) {
     toggleRow:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14 },
     toggleRowBorder: { borderBottomWidth: 1, borderBottomColor: C.border },
     toggleInfo:      { flex: 1, marginRight: 12 },
-    toggleLabel:     { fontSize: 15, color: C.text, fontWeight: '500' },
+    toggleLabel:     { fontSize: 15, color: C.text, fontWeight: '500', fontFamily: F.body },
     toggleHint:      { fontSize: 12, color: C.textMuted, marginTop: 2 },
+    // Appearance
+    subsectionLabel:     { fontSize: 11, fontWeight: '600', color: C.textMuted, letterSpacing: 0.6, marginBottom: 10 },
+    paletteRow:          { flexDirection: 'row', gap: 12, marginBottom: 6 },
+    paletteSwatch:       { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+    paletteSwatchActive: { borderWidth: 3, borderColor: C.text },
+    paletteSwatchCheck:  { color: '#fff', fontSize: 16, fontWeight: '700' },
+    paletteLabels:       { flexDirection: 'row', gap: 12, marginBottom: 4 },
+    paletteLabel:        { width: 40, fontSize: 10, color: C.textMuted, textAlign: 'center' },
+    fontRow:             { flexDirection: 'row', gap: 12 },
+    fontBtn:             { flex: 1, backgroundColor: C.bgCard, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border, padding: 14, alignItems: 'center', ...SHADOW.card },
+    fontBtnActive:       { borderColor: C.accent, backgroundColor: C.accentLight },
+    fontBtnSample:       { fontSize: 24, fontWeight: '700', color: C.text, marginBottom: 4 },
+    fontBtnLabel:        { fontSize: 11, color: C.textMuted },
     // Danger
     dangerCard:      { borderWidth: 1, borderColor: '#FAD4D4' },
     dangerBtn:       { fontSize: 15, color: C.danger, fontWeight: '500', padding: 16 },

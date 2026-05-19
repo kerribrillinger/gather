@@ -4,7 +4,7 @@ import {
   Pressable, StyleSheet, KeyboardAvoidingView, Platform, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useApp, useTheme } from '../AppContext';
+import { useApp, useTheme, useFont } from '../AppContext';
 import { generateId } from '../storage';
 import { RADIUS, SHADOW } from '../theme';
 
@@ -33,7 +33,8 @@ export default function JournalScreen() {
   const [editBody, setEditBody] = useState('');
   const [editMood, setEditMood] = useState(null);
 
-  const styles = useMemo(() => makeStyles(C), [C]);
+  const F = useFont();
+  const styles = useMemo(() => makeStyles(C, F), [C, F]);
 
   const todayStr = new Date().toDateString();
   const todayEntry = (state.checkIns || []).find(
@@ -102,9 +103,14 @@ export default function JournalScreen() {
                 <View>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                     <Text style={styles.todayMood}>{todayEntry.mood}</Text>
-                    <TouchableOpacity onPress={() => { setEditingEntry(todayEntry); setEditBody(todayEntry.body); setEditMood(todayEntry.mood); }}>
-                      <Text style={{ fontSize: 13, color: C.accent, fontWeight: '600' }}>Edit</Text>
-                    </TouchableOpacity>
+                    <View style={{ flexDirection: 'row', gap: 16 }}>
+                      <TouchableOpacity onPress={() => { setEditingEntry(todayEntry); setEditBody(todayEntry.body); setEditMood(todayEntry.mood); }}>
+                        <Text style={{ fontSize: 13, color: C.accent, fontWeight: '600' }}>Edit</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => deleteEntry(todayEntry.id)}>
+                        <Text style={{ fontSize: 13, color: C.danger, fontWeight: '600' }}>Delete</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                   <Text style={styles.entryBody}>{todayEntry.body}</Text>
                 </View>
@@ -200,12 +206,12 @@ export default function JournalScreen() {
   );
 }
 
-function makeStyles(C) {
+function makeStyles(C, F = {}) {
   return StyleSheet.create({
     safe:          { flex: 1, backgroundColor: C.bg },
     scroll:        { flex: 1 },
     content:       { padding: 20 },
-    pageTitle:     { fontSize: 32, fontWeight: '700', color: C.text },
+    pageTitle:     { fontSize: 32, fontWeight: '700', color: C.text, fontFamily: F.heading },
     pageSubtitle:  { fontSize: 14, color: C.textMuted, marginBottom: 20 },
     // Tabs
     tabs:          { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: C.border, marginBottom: 20 },
@@ -223,7 +229,7 @@ function makeStyles(C) {
     moodBtn:       { width: 42, height: 42, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
     moodBtnActive: { borderColor: C.accent, backgroundColor: C.accentLight },
     moodEmoji:     { fontSize: 22 },
-    bodyInput:     { fontSize: 15, color: C.text, minHeight: 160, lineHeight: 24, paddingTop: 4 },
+    bodyInput:     { fontSize: 15, color: C.text, minHeight: 160, lineHeight: 24, paddingTop: 4, fontFamily: F.body },
     saveBtn:       { alignSelf: 'flex-end', marginTop: 16, backgroundColor: C.accent, paddingHorizontal: 20, paddingVertical: 12, borderRadius: RADIUS.md },
     saveBtnText:   { color: '#fff', fontWeight: '600', fontSize: 15 },
     todayMood:     { fontSize: 28, marginBottom: 8 },
@@ -233,7 +239,7 @@ function makeStyles(C) {
     entryHeader:   { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
     entryMood:     { fontSize: 28 },
     entryDate:     { fontSize: 13, color: C.textMuted },
-    entryBody:     { fontSize: 14, color: C.text, lineHeight: 22 },
+    entryBody:     { fontSize: 14, color: C.text, lineHeight: 22, fontFamily: F.body },
     empty:         { fontSize: 14, color: C.textFaint },
     // Edit modal
     modalHeader:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: C.border },

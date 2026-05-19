@@ -1,29 +1,87 @@
-// Gather Mobile — design tokens, mirrored from desktop styles.css
+// Gather Mobile — design tokens
 
-export const COLORS = {
-  // Warm palette (default) — light
-  bg:          '#F5F0E6',
-  bgCard:      '#FFFFFF',
-  text:        '#1E2820',
-  textMuted:   '#6B7A6F',
-  textFaint:   '#9EAB9E',
-  border:      '#E2DDD6',
-  accent:      '#C4953A',
-  accentLight: '#F5EDDA',
-  sage:        '#5D6E63',
-  danger:      '#C0392B',
-  // Dark overrides applied at component level when theme === 'dark'
-  dark: {
-    bg:          '#1A1F1B',
-    bgCard:      '#242B25',
-    text:        'rgba(255,255,255,0.88)',
-    textMuted:   'rgba(255,255,255,0.50)',
-    textFaint:   'rgba(255,255,255,0.28)',
-    border:      'rgba(255,255,255,0.10)',
-    accent:      '#D4A84B',
-    accentLight: 'rgba(212,168,75,0.15)',
-    sage:        '#7A9A82',
+const DARK_BASE = {
+  bg:          '#1A1F1B',
+  bgCard:      '#242B25',
+  text:        'rgba(255,255,255,0.88)',
+  textMuted:   'rgba(255,255,255,0.50)',
+  textFaint:   'rgba(255,255,255,0.28)',
+  border:      'rgba(255,255,255,0.10)',
+};
+
+export const PALETTES = {
+  warm: {
+    label:       'Warm',
+    swatch:      '#C4953A',
+    bg:          '#F5F0E6',
+    bgCard:      '#FFFFFF',
+    text:        '#1E2820',
+    textMuted:   '#6B7A6F',
+    textFaint:   '#9EAB9E',
+    border:      '#E2DDD6',
+    accent:      '#C4953A',
+    accentLight: '#F5EDDA',
+    sage:        '#5D6E63',
+    danger:      '#C0392B',
+    dark: { ...DARK_BASE, accent: '#D4A84B', accentLight: 'rgba(212,168,75,0.15)', sage: '#7A9A82' },
   },
+  cool: {
+    label:       'Cool',
+    swatch:      '#2E78C4',
+    bg:          '#EEF3F8',
+    bgCard:      '#FFFFFF',
+    text:        '#1A2838',
+    textMuted:   '#526070',
+    textFaint:   '#8A9FAF',
+    border:      '#D5E2EC',
+    accent:      '#2E78C4',
+    accentLight: '#DAE8F5',
+    sage:        '#4A6E82',
+    danger:      '#C0392B',
+    dark: { ...DARK_BASE, bg: '#141C26', bgCard: '#1E2A38', accent: '#4A9AE6', accentLight: 'rgba(74,154,230,0.15)', sage: '#6A9AB2' },
+  },
+  forest: {
+    label:       'Forest',
+    swatch:      '#2E7D32',
+    bg:          '#EAF0EA',
+    bgCard:      '#FFFFFF',
+    text:        '#1A2A1E',
+    textMuted:   '#4A6854',
+    textFaint:   '#7A9882',
+    border:      '#CDD9CE',
+    accent:      '#2E7D32',
+    accentLight: '#D6EDDA',
+    sage:        '#4A7850',
+    danger:      '#C0392B',
+    dark: { ...DARK_BASE, bg: '#141E14', bgCard: '#1C2A1C', accent: '#4CAF50', accentLight: 'rgba(76,175,80,0.15)', sage: '#6AAF70' },
+  },
+  slate: {
+    label:       'Slate',
+    swatch:      '#5B5EBF',
+    bg:          '#EEEFF4',
+    bgCard:      '#FFFFFF',
+    text:        '#1A1C2E',
+    textMuted:   '#565878',
+    textFaint:   '#8A8CAE',
+    border:      '#D8D9E8',
+    accent:      '#5B5EBF',
+    accentLight: '#E4E5F5',
+    sage:        '#5B5E8A',
+    danger:      '#C0392B',
+    dark: { ...DARK_BASE, bg: '#14141E', bgCard: '#1C1C2E', accent: '#7B7EDF', accentLight: 'rgba(123,126,223,0.15)', sage: '#7B7EAA' },
+  },
+};
+
+// Default export — warm light, kept for any legacy imports
+export const COLORS = {
+  ...PALETTES.warm,
+  dark: PALETTES.warm.dark,
+};
+
+export const FONT_OPTIONS = {
+  system: { label: 'Default',   body: undefined,      heading: undefined      },
+  serif:  { label: 'Serif',     body: 'Georgia',       heading: 'Georgia'      },
+  mono:   { label: 'Monospace', body: 'Courier New',   heading: 'Courier New'  },
 };
 
 export const FONTS = {

@@ -4,7 +4,7 @@ import {
   Pressable, StyleSheet, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useApp, useTheme } from '../AppContext';
+import { useApp, useTheme, useFont } from '../AppContext';
 import { generateId } from '../storage';
 import { RADIUS, SHADOW } from '../theme';
 
@@ -57,7 +57,8 @@ export default function HabitsScreen() {
   const [editFreq, setEditFreq] = useState('daily');
   const [editEmoji, setEditEmoji] = useState('⭐');
 
-  const styles = useMemo(() => makeStyles(C), [C]);
+  const F = useFont();
+  const styles = useMemo(() => makeStyles(C, F), [C, F]);
 
   const habits = state.habits || [];
   const today = todayKey();
@@ -305,13 +306,13 @@ export default function HabitsScreen() {
   );
 }
 
-function makeStyles(C) {
+function makeStyles(C, F = {}) {
   return StyleSheet.create({
     safe:              { flex: 1, backgroundColor: C.bg },
     scroll:            { flex: 1 },
     content:           { padding: 20 },
     pageHeader:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
-    pageTitle:         { fontSize: 32, fontWeight: '700', color: C.text },
+    pageTitle:         { fontSize: 32, fontWeight: '700', color: C.text, fontFamily: F.heading },
     pageSubtitle:      { fontSize: 14, color: C.textMuted, marginTop: 2 },
     addHeaderBtn:      { backgroundColor: C.accent, paddingHorizontal: 14, paddingVertical: 8, borderRadius: RADIUS.md, marginTop: 6 },
     addHeaderBtnText:  { color: '#fff', fontWeight: '600', fontSize: 14 },
@@ -339,7 +340,7 @@ function makeStyles(C) {
     habitInfo:         { flex: 1 },
     habitTitleRow:     { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 },
     habitEmoji:        { fontSize: 18 },
-    habitName:         { fontSize: 15, fontWeight: '600', color: C.text },
+    habitName:         { fontSize: 15, fontWeight: '600', color: C.text, fontFamily: F.body },
     habitNameDone:     { textDecorationLine: 'line-through', color: C.textMuted },
     habitMeta:         { fontSize: 12, color: C.textMuted },
     deleteBtn:         { padding: 4 },

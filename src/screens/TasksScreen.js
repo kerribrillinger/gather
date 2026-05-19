@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatlist';
-import { useApp, useTheme } from '../AppContext';
+import { useApp, useTheme, useFont } from '../AppContext';
 import { generateId } from '../storage';
 import { RADIUS, SHADOW, LIST_BADGE_COLORS } from '../theme';
 
@@ -16,7 +16,8 @@ function getListBadge(name) {
 export default function TasksScreen() {
   const { state, setState } = useApp();
   const C = useTheme();
-  const styles = useMemo(() => makeStyles(C), [C]);
+  const F = useFont();
+  const styles = useMemo(() => makeStyles(C, F), [C, F]);
 
   const [activeListId, setActiveListId] = useState(null);
   const [taskInput, setTaskInput] = useState('');
@@ -357,12 +358,12 @@ export default function TasksScreen() {
   );
 }
 
-function makeStyles(C) {
+function makeStyles(C, F = {}) {
   return StyleSheet.create({
     safe:            { flex: 1, backgroundColor: C.bg },
     scroll:          { flex: 0 },
     headerContent:   { paddingHorizontal: 20, paddingTop: 20 },
-    pageTitle:       { fontSize: 32, fontWeight: '700', color: C.text, marginBottom: 16 },
+    pageTitle:       { fontSize: 32, fontWeight: '700', color: C.text, marginBottom: 16, fontFamily: F.heading },
     // Tabs
     tabScroll:       { marginHorizontal: -20, marginBottom: 20 },
     tabs:            { paddingHorizontal: 20, gap: 8 },
@@ -409,7 +410,7 @@ function makeStyles(C) {
     check:             { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: C.border, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
     checkDone:         { backgroundColor: C.sage, borderColor: C.sage },
     checkMark:         { color: '#fff', fontSize: 11, fontWeight: '700' },
-    todoText:          { flex: 1, fontSize: 15, color: C.text },
+    todoText:          { flex: 1, fontSize: 15, color: C.text, fontFamily: F.body },
     todoTextDone:      { textDecorationLine: 'line-through', color: C.textMuted },
     star:              { fontSize: 18, color: C.border },
     starActive:        { color: C.accent },

@@ -1,7 +1,7 @@
 // Global state context — mirrors how appState works on desktop
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { loadData, saveData } from './storage';
-import { COLORS } from './theme';
+import { PALETTES, FONT_OPTIONS } from './theme';
 
 const AppContext = createContext(null);
 
@@ -68,6 +68,14 @@ export function useApp() {
 
 export function useTheme() {
   const ctx = useContext(AppContext);
+  const palette = ctx?.state?.palette || 'warm';
   const isDark = ctx?.state?.theme === 'dark';
-  return isDark ? { ...COLORS, ...COLORS.dark } : COLORS;
+  const base = PALETTES[palette] || PALETTES.warm;
+  return isDark ? { ...base, ...base.dark } : base;
+}
+
+export function useFont() {
+  const ctx = useContext(AppContext);
+  const fontStyle = ctx?.state?.fontStyle || 'system';
+  return FONT_OPTIONS[fontStyle] || FONT_OPTIONS.system;
 }

@@ -4,7 +4,7 @@ import {
   StyleSheet, Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useApp, useTheme } from '../AppContext';
+import { useApp, useTheme, useFont } from '../AppContext';
 import { generateId } from '../storage';
 import { RADIUS, SHADOW } from '../theme';
 
@@ -50,7 +50,8 @@ export default function HomeScreen({ navigation }) {
   const [weather, setWeather] = useState(null);
   const quote = QUOTES[new Date().getDate() % QUOTES.length];
 
-  const styles = useMemo(() => makeStyles(C), [C]);
+  const F = useFont();
+  const styles = useMemo(() => makeStyles(C, F), [C, F]);
 
   useEffect(() => {
     async function fetchWeather() {
@@ -237,7 +238,7 @@ export default function HomeScreen({ navigation }) {
   );
 }
 
-function makeStyles(C) {
+function makeStyles(C, F = {}) {
   return StyleSheet.create({
     safe:             { flex: 1, backgroundColor: C.bg },
     scroll:           { flex: 1 },
@@ -247,7 +248,7 @@ function makeStyles(C) {
     weatherEmoji:     { fontSize: 22 },
     weatherTemp:      { fontSize: 13, fontWeight: '700', color: C.text, marginTop: 2 },
     greetingDate:     { fontSize: 14, color: C.textMuted, marginBottom: 2 },
-    name:             { fontSize: 36, fontWeight: '700', color: C.text },
+    name:             { fontSize: 36, fontWeight: '700', color: C.text, fontFamily: F.heading },
     card:             { backgroundColor: C.bgCard, borderRadius: RADIUS.lg, padding: 16, ...SHADOW.card },
     quoteCard:        { marginBottom: 24 },
     quoteText:        { fontSize: 14, fontStyle: 'italic', color: C.text, lineHeight: 22 },
@@ -262,7 +263,7 @@ function makeStyles(C) {
     focusCheck:       { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
     focusCheckDone:   { backgroundColor: C.sage, borderColor: C.sage },
     focusCheckMark:   { color: '#fff', fontSize: 12, fontWeight: '700' },
-    focusText:        { fontSize: 14, color: C.text, flex: 1 },
+    focusText:        { fontSize: 14, color: C.text, flex: 1, fontFamily: F.body },
     focusTextDone:    { textDecorationLine: 'line-through', color: C.textMuted },
     focusInputRow:    { paddingTop: 8, borderTopWidth: 1, borderTopColor: C.border, marginTop: 4 },
     focusInput:       { fontSize: 14, color: C.text, paddingVertical: 4 },
@@ -272,11 +273,11 @@ function makeStyles(C) {
     checkDone:        { backgroundColor: C.sage, borderColor: C.sage },
     checkMark:        { color: '#fff', fontSize: 11, fontWeight: '700' },
     todoTextGroup:    { flex: 1 },
-    todoText:         { fontSize: 14, color: C.text },
+    todoText:         { fontSize: 14, color: C.text, fontFamily: F.body },
     todoTextDone:     { textDecorationLine: 'line-through', color: C.textMuted },
     todoListName:     { fontSize: 12, color: C.textMuted, marginTop: 1 },
     // Checkin
-    checkinPreview:   { fontSize: 14, color: C.text, lineHeight: 22 },
+    checkinPreview:   { fontSize: 14, color: C.text, lineHeight: 22, fontFamily: F.body },
     consumingPreview: { fontSize: 14, color: C.text },
   });
 }

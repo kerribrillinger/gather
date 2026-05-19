@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { useApp, useTheme } from '../AppContext';
+import { useApp, useTheme, useFont } from '../AppContext';
 import { generateId } from '../storage';
 import { RADIUS, SHADOW } from '../theme';
 
@@ -37,7 +37,8 @@ async function pickCoverImage() {
 export default function HobbiesScreen() {
   const { state, setState } = useApp();
   const C = useTheme();
-  const styles = useMemo(() => makeStyles(C), [C]);
+  const F = useFont();
+  const styles = useMemo(() => makeStyles(C, F), [C, F]);
 
   const [activeStatus, setActiveStatus] = useState('current');
   const [showAdd, setShowAdd] = useState(false);
@@ -249,13 +250,13 @@ export default function HobbiesScreen() {
   );
 }
 
-function makeStyles(C) {
+function makeStyles(C, F = {}) {
   return StyleSheet.create({
     safe:               { flex: 1, backgroundColor: C.bg },
     scroll:             { flex: 1 },
     content:            { padding: 20 },
     pageHeader:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
-    pageTitle:          { fontSize: 32, fontWeight: '700', color: C.text },
+    pageTitle:          { fontSize: 32, fontWeight: '700', color: C.text, fontFamily: F.heading },
     pageSubtitle:       { fontSize: 14, color: C.textMuted, marginTop: 2 },
     addHeaderBtn:       { backgroundColor: C.accent, paddingHorizontal: 14, paddingVertical: 8, borderRadius: RADIUS.md, marginTop: 6 },
     addHeaderBtnText:   { color: '#fff', fontWeight: '600', fontSize: 14 },
@@ -282,7 +283,7 @@ function makeStyles(C) {
     itemCover:          { width: 48, height: 64, borderRadius: RADIUS.sm, backgroundColor: C.border },
     deleteBtn:          { padding: 4 },
     deleteBtnText:      { fontSize: 18, color: C.textFaint, lineHeight: 20 },
-    itemTitle:          { fontSize: 14, fontWeight: '600', color: C.text, marginBottom: 4, lineHeight: 20 },
+    itemTitle:          { fontSize: 14, fontWeight: '600', color: C.text, marginBottom: 4, lineHeight: 20, fontFamily: F.body },
     itemCategory:       { fontSize: 12, color: C.textMuted, marginBottom: 6 },
     itemNotes:          { fontSize: 12, color: C.textMuted, lineHeight: 18, marginBottom: 8 },
     statusBtn:          { marginTop: 'auto', paddingTop: 8, borderTopWidth: 1, borderTopColor: C.border },
