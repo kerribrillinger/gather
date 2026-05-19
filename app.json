@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "gather-mobile",
+    "name": "Gather",
     "slug": "gather-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -18,9 +18,9 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#F5F0E6"
+        "backgroundColor": "#4F6B5D"
       },
-      "backgroundColor": "#F5F0E6",
+      "backgroundColor": "#4F6B5D",
       "package": "com.kerri.gathermobile",
       "edgeToEdgeEnabled": true
     },

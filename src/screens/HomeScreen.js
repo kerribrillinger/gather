@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
   StyleSheet, Pressable,
@@ -16,6 +16,22 @@ const QUOTES = [
   { text: 'Small steps every day lead to big results.', author: '' },
 ];
 
+const WEATHER_API_KEY = 'bd5e378503939ddaee76f12ad7a97608';
+
+function weatherCodeToEmoji(code, isDay) {
+  if (code >= 200 && code < 300) return '⛈️';
+  if (code >= 300 && code < 400) return '🌦️';
+  if (code === 511)               return '🌨️';
+  if (code >= 500 && code < 600) return '🌧️';
+  if (code >= 600 && code < 700) return '❄️';
+  if (code >= 700 && code < 800) return '🌫️';
+  if (code === 800) return isDay ? '☀️' : '🌙';
+  if (code === 801) return isDay ? '🌤️' : '🌙';
+  if (code === 802) return '⛅';
+  if (code >= 803) return '☁️';
+  return isDay ? '☀️' : '🌙';
+}
+
 function greeting() {
   const h = new Date().getHours();
   if (h < 12) return 'Good morning';
@@ -31,9 +47,33 @@ export default function HomeScreen({ navigation }) {
   const { state, setState } = useApp();
   const C = useTheme();
   const [focusInput, setFocusInput] = useState('');
+  const [weather, setWeather] = useState(null);
   const quote = QUOTES[new Date().getDate() % QUOTES.length];
 
   const styles = useMemo(() => makeStyles(C), [C]);
+
+  useEffect(() => {
+    async function fetchWeather() {
+      if (!state.weatherLocation) return;
+      try {
+        const location = encodeURIComponent(state.weatherLocation.trim());
+        const url = `https://api.openweathermap.org/data/2.5/weather?q=${location}&appid=${WEATHER_API_KEY}&units=metric`;
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const data = await res.json();
+        const now = Math.floor(Date.now() / 1000);
+        const isDay = now >= data.sys?.sunrise && now < data.sys?.sunset;
+        setWeather({
+          emoji: weatherCodeToEmoji(data.weather?.[0]?.id, isDay),
+          temp: Math.round(data.main?.temp),
+          description: data.weather?.[0]?.main,
+        });
+      } catch (_) {}
+    }
+    fetchWeather();
+    const interval = setInterval(fetchWeather, 30 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [state.weatherLocation]);
 
   const openTodos = (state.workLists || [])
     .filter((l) => !state.weekendMode || !l.isWork)
@@ -72,10 +112,16 @@ export default function HomeScreen({ navigation }) {
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={styles.greetingDate}>{greeting()}, {formatDate()}</Text>
             <Text style={styles.name}>{state.userName || 'There'}</Text>
           </View>
+          {weather && (
+            <View style={styles.weatherBadge}>
+              <Text style={styles.weatherEmoji}>{weather.emoji}</Text>
+              <Text style={styles.weatherTemp}>{weather.temp}°</Text>
+            </View>
+          )}
         </View>
 
         {/* Quote */}
@@ -196,7 +242,10 @@ function makeStyles(C) {
     safe:             { flex: 1, backgroundColor: C.bg },
     scroll:           { flex: 1 },
     content:          { padding: 20 },
-    header:           { marginBottom: 20 },
+    header:           { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 },
+    weatherBadge:     { alignItems: 'center', backgroundColor: C.bgCard, borderRadius: RADIUS.lg, paddingHorizontal: 12, paddingVertical: 8, ...SHADOW.card },
+    weatherEmoji:     { fontSize: 22 },
+    weatherTemp:      { fontSize: 13, fontWeight: '700', color: C.text, marginTop: 2 },
     greetingDate:     { fontSize: 14, color: C.textMuted, marginBottom: 2 },
     name:             { fontSize: 36, fontWeight: '700', color: C.text },
     card:             { backgroundColor: C.bgCard, borderRadius: RADIUS.lg, padding: 16, ...SHADOW.card },

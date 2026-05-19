@@ -25,6 +25,8 @@ export default function TasksScreen() {
   const [newListName, setNewListName] = useState('');
   const [newListColorIndex, setNewListColorIndex] = useState(0);
   const [newListIsWork, setNewListIsWork] = useState(false);
+  const [editingTodo, setEditingTodo] = useState(null);
+  const [editText, setEditText] = useState('');
 
   const allLists = state.workLists || [];
   const lists = state.weekendMode ? allLists.filter((l) => !l.isWork) : allLists;
@@ -102,6 +104,20 @@ export default function TasksScreen() {
       ...s,
       workTodos: { ...s.workTodos, [currentList.id]: newData },
     }));
+  }
+
+  function saveEditTodo() {
+    if (!editText.trim() || !currentList) return;
+    setState((s) => ({
+      ...s,
+      workTodos: {
+        ...s.workTodos,
+        [currentList.id]: (s.workTodos[currentList.id] || []).map((t) =>
+          t.id === editingTodo.id ? { ...t, text: editText.trim() } : t
+        ),
+      },
+    }));
+    setEditingTodo(null);
   }
 
   function createList() {
@@ -222,6 +238,11 @@ export default function TasksScreen() {
                 </Pressable>
                 <Text style={[styles.todoText, todo.completed && styles.todoTextDone]} numberOfLines={2}>{todo.text}</Text>
                 {!todo.completed && (
+                  <TouchableOpacity onPress={() => { setEditingTodo(todo); setEditText(todo.text); }} style={{ padding: 4 }}>
+                    <Text style={{ fontSize: 14, color: C.textFaint }}>✎</Text>
+                  </TouchableOpacity>
+                )}
+                {!todo.completed && (
                   <TouchableOpacity onPress={() => toggleImportant(todo.id)}>
                     <Text style={[styles.star, todo.important && styles.starActive]}>★</Text>
                   </TouchableOpacity>
@@ -252,6 +273,31 @@ export default function TasksScreen() {
           />
         </View>
       )}
+
+      {/* Edit Task Modal */}
+      <Modal visible={!!editingTodo} animationType="fade" transparent>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 24 }}>
+          <View style={{ backgroundColor: C.bgCard, borderRadius: RADIUS.lg, padding: 20 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: C.text, marginBottom: 12 }}>Edit Task</Text>
+            <TextInput
+              style={{ backgroundColor: C.bg, borderRadius: RADIUS.md, padding: 12, fontSize: 15, color: C.text, borderWidth: 1, borderColor: C.border, marginBottom: 16 }}
+              value={editText}
+              onChangeText={setEditText}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={saveEditTodo}
+            />
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity style={{ flex: 1, padding: 12, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border, alignItems: 'center' }} onPress={() => setEditingTodo(null)}>
+                <Text style={{ color: C.textMuted, fontWeight: '500' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{ flex: 1, padding: 12, borderRadius: RADIUS.md, backgroundColor: C.accent, alignItems: 'center' }} onPress={saveEditTodo}>
+                <Text style={{ color: '#fff', fontWeight: '600' }}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* New List Modal */}
       <Modal visible={showNewList} animationType="slide" presentationStyle="pageSheet">

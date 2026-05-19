@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
-  Pressable, StyleSheet, KeyboardAvoidingView, Platform,
+  Pressable, StyleSheet, KeyboardAvoidingView, Platform, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApp, useTheme } from '../AppContext';
@@ -29,6 +29,9 @@ export default function JournalScreen() {
   const [activeTab, setActiveTab] = useState('today');
   const [mood, setMood] = useState(null);
   const [body, setBody] = useState('');
+  const [editingEntry, setEditingEntry] = useState(null);
+  const [editBody, setEditBody] = useState('');
+  const [editMood, setEditMood] = useState(null);
 
   const styles = useMemo(() => makeStyles(C), [C]);
 
@@ -49,6 +52,21 @@ export default function JournalScreen() {
     setState((s) => ({ ...s, checkIns: [entry, ...(s.checkIns || [])] }));
     setBody('');
     setMood(null);
+  }
+
+  function saveEdit() {
+    if (!editBody.trim()) return;
+    setState((s) => ({
+      ...s,
+      checkIns: (s.checkIns || []).map((e) =>
+        e.id === editingEntry.id ? { ...e, body: editBody.trim(), mood: editMood } : e
+      ),
+    }));
+    setEditingEntry(null);
+  }
+
+  function deleteEntry(id) {
+    setState((s) => ({ ...s, checkIns: (s.checkIns || []).filter((e) => e.id !== id) }));
   }
 
   const pastEntries = (state.checkIns || []).filter(
@@ -82,7 +100,12 @@ export default function JournalScreen() {
 
               {todayEntry ? (
                 <View>
-                  <Text style={styles.todayMood}>{todayEntry.mood}</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <Text style={styles.todayMood}>{todayEntry.mood}</Text>
+                    <TouchableOpacity onPress={() => { setEditingEntry(todayEntry); setEditBody(todayEntry.body); setEditMood(todayEntry.mood); }}>
+                      <Text style={{ fontSize: 13, color: C.accent, fontWeight: '600' }}>Edit</Text>
+                    </TouchableOpacity>
+                  </View>
                   <Text style={styles.entryBody}>{todayEntry.body}</Text>
                 </View>
               ) : (
@@ -124,6 +147,14 @@ export default function JournalScreen() {
                       </View>
                     </View>
                     <Text style={styles.entryBody} numberOfLines={4}>{entry.body}</Text>
+                    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 16, marginTop: 10 }}>
+                      <TouchableOpacity onPress={() => { setEditingEntry(entry); setEditBody(entry.body); setEditMood(entry.mood); }}>
+                        <Text style={{ fontSize: 13, color: C.accent, fontWeight: '600' }}>Edit</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => deleteEntry(entry.id)}>
+                        <Text style={{ fontSize: 13, color: C.danger, fontWeight: '600' }}>Delete</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 ))
               )}
@@ -133,6 +164,38 @@ export default function JournalScreen() {
           <View style={{ height: 32 }} />
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal visible={!!editingEntry} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaView style={styles.safe}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setEditingEntry(null)}>
+              <Text style={styles.modalClose}>✕</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Edit Entry</Text>
+            <TouchableOpacity onPress={saveEdit}>
+              <Text style={{ fontSize: 15, color: C.accent, fontWeight: '600' }}>Save</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={{ flex: 1, padding: 20 }}>
+            <Text style={styles.moodPrompt}>How were you feeling?</Text>
+            <View style={styles.moodRow}>
+              {MOODS.map((m) => (
+                <Pressable key={m} style={[styles.moodBtn, editMood === m && styles.moodBtnActive]} onPress={() => setEditMood(m === editMood ? null : m)}>
+                  <Text style={styles.moodEmoji}>{m}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <TextInput
+              style={[styles.bodyInput, { borderWidth: 1, borderColor: C.border, borderRadius: RADIUS.md, padding: 12, backgroundColor: C.bgCard }]}
+              multiline
+              value={editBody}
+              onChangeText={setEditBody}
+              textAlignVertical="top"
+              autoFocus
+            />
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -172,5 +235,9 @@ function makeStyles(C) {
     entryDate:     { fontSize: 13, color: C.textMuted },
     entryBody:     { fontSize: 14, color: C.text, lineHeight: 22 },
     empty:         { fontSize: 14, color: C.textFaint },
+    // Edit modal
+    modalHeader:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: C.border },
+    modalTitle:    { fontSize: 18, fontWeight: '600', color: C.text },
+    modalClose:    { fontSize: 18, color: C.textMuted, minWidth: 40 },
   });
 }

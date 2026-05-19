@@ -52,6 +52,10 @@ export default function HabitsScreen() {
   const [newName, setNewName] = useState('');
   const [newFreq, setNewFreq] = useState('daily');
   const [newEmoji, setNewEmoji] = useState('⭐');
+  const [editingHabit, setEditingHabit] = useState(null);
+  const [editName, setEditName] = useState('');
+  const [editFreq, setEditFreq] = useState('daily');
+  const [editEmoji, setEditEmoji] = useState('⭐');
 
   const styles = useMemo(() => makeStyles(C), [C]);
 
@@ -94,6 +98,17 @@ export default function HabitsScreen() {
       delete newLog[id];
       return { ...s, habits: (s.habits || []).filter((h) => h.id !== id), habitLog: newLog };
     });
+  }
+
+  function saveEditHabit() {
+    if (!editName.trim()) return;
+    setState((s) => ({
+      ...s,
+      habits: (s.habits || []).map((h) =>
+        h.id === editingHabit.id ? { ...h, name: editName.trim(), emoji: editEmoji, frequency: editFreq } : h
+      ),
+    }));
+    setEditingHabit(null);
   }
 
   const todayIsWeekend = isWeekend(new Date());
@@ -158,9 +173,14 @@ export default function HabitsScreen() {
                       {isWeekdayHabitOnWeekend ? ' · rest day' : streak > 0 ? ` · 🔥 ${streak} day${streak !== 1 ? 's' : ''}` : ''}
                     </Text>
                   </View>
-                  <TouchableOpacity onPress={() => deleteHabit(habit.id)} style={styles.deleteBtn}>
-                    <Text style={styles.deleteBtnText}>×</Text>
-                  </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', gap: 4 }}>
+                    <TouchableOpacity onPress={() => { setEditingHabit(habit); setEditName(habit.name); setEditEmoji(habit.emoji); setEditFreq(habit.frequency); }} style={styles.deleteBtn}>
+                      <Text style={{ fontSize: 16, color: C.textMuted }}>✎</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => deleteHabit(habit.id)} style={styles.deleteBtn}>
+                      <Text style={styles.deleteBtnText}>×</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               );
             })}
@@ -169,6 +189,61 @@ export default function HabitsScreen() {
 
         <View style={{ height: 32 }} />
       </ScrollView>
+
+      {/* Edit Habit Modal */}
+      <Modal visible={!!editingHabit} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaView style={styles.modal}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Edit Habit</Text>
+            <TouchableOpacity onPress={() => setEditingHabit(null)}>
+              <Text style={styles.modalClose}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.modalBody}>
+            <Text style={styles.fieldLabel}>HABIT NAME</Text>
+            <TextInput
+              style={styles.fieldInput}
+              placeholder="e.g. Morning walk, Read 20 min…"
+              placeholderTextColor={C.textFaint}
+              value={editName}
+              onChangeText={setEditName}
+              autoFocus
+            />
+            <Text style={[styles.fieldLabel, { marginTop: 20 }]}>EMOJI</Text>
+            <View style={styles.emojiGrid}>
+              {['⭐','💪','📚','🏃','🧘','💧','🥗','😴','✏️','🎯','🌿','🎵'].map((e) => (
+                <TouchableOpacity
+                  key={e}
+                  style={[styles.emojiBtn, editEmoji === e && styles.emojiBtnActive]}
+                  onPress={() => setEditEmoji(e)}
+                >
+                  <Text style={styles.emojiText}>{e}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={[styles.fieldLabel, { marginTop: 20 }]}>FREQUENCY</Text>
+            <View style={styles.freqRow}>
+              {FREQ_OPTIONS.map((f) => (
+                <TouchableOpacity
+                  key={f.key}
+                  style={[styles.freqBtn, editFreq === f.key && styles.freqBtnActive]}
+                  onPress={() => setEditFreq(f.key)}
+                >
+                  <Text style={[styles.freqBtnText, editFreq === f.key && styles.freqBtnTextActive]}>{f.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+          <View style={styles.modalFooter}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditingHabit(null)}>
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.confirmBtn} onPress={saveEditHabit}>
+              <Text style={styles.confirmBtnText}>Save changes</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </Modal>
 
       {/* Add Habit Modal */}
       <Modal visible={showAdd} animationType="slide" presentationStyle="pageSheet">
