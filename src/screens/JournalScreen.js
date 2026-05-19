@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
   Pressable, StyleSheet, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useApp } from '../AppContext';
+import { useApp, useTheme } from '../AppContext';
 import { generateId } from '../storage';
-import { COLORS, RADIUS, SHADOW } from '../theme';
+import { RADIUS, SHADOW } from '../theme';
 
 const MOODS = ['😊','😢','😐','😤','🤔','💪','😎','🎉'];
 
@@ -25,9 +25,12 @@ function formatEntryDate(iso) {
 
 export default function JournalScreen() {
   const { state, setState } = useApp();
+  const C = useTheme();
   const [activeTab, setActiveTab] = useState('today');
   const [mood, setMood] = useState(null);
   const [body, setBody] = useState('');
+
+  const styles = useMemo(() => makeStyles(C), [C]);
 
   const todayStr = new Date().toDateString();
   const todayEntry = (state.checkIns || []).find(
@@ -53,8 +56,8 @@ export default function JournalScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <Text style={styles.pageTitle}>Journal</Text>
           <Text style={styles.pageSubtitle}>Daily reflections and thoughts</Text>
@@ -96,7 +99,7 @@ export default function JournalScreen() {
                     style={styles.bodyInput}
                     multiline
                     placeholder={prompt}
-                    placeholderTextColor={COLORS.textFaint}
+                    placeholderTextColor={C.textFaint}
                     value={body}
                     onChangeText={setBody}
                     textAlignVertical="top"
@@ -134,38 +137,40 @@ export default function JournalScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe:          { flex: 1, backgroundColor: COLORS.bg },
-  scroll:        { flex: 1 },
-  content:       { padding: 20 },
-  pageTitle:     { fontSize: 32, fontWeight: '700', color: COLORS.text },
-  pageSubtitle:  { fontSize: 14, color: COLORS.textMuted, marginBottom: 20 },
-  // Tabs
-  tabs:          { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.border, marginBottom: 20 },
-  tab:           { paddingVertical: 10, paddingHorizontal: 4, marginRight: 24, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabActive:     { borderBottomColor: COLORS.accent },
-  tabText:       { fontSize: 15, color: COLORS.textMuted, fontWeight: '500' },
-  tabTextActive: { color: COLORS.accent, fontWeight: '600' },
-  // Today card
-  card:          { backgroundColor: COLORS.bgCard, borderRadius: RADIUS.lg, padding: 18, ...SHADOW.card },
-  cardTitleRow:  { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
-  cardIcon:      { fontSize: 18 },
-  cardTitle:     { fontSize: 16, fontWeight: '600', color: COLORS.text },
-  moodPrompt:    { fontSize: 14, fontWeight: '500', color: COLORS.text, marginBottom: 10 },
-  moodRow:       { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  moodBtn:       { width: 42, height: 42, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center' },
-  moodBtnActive: { borderColor: COLORS.accent, backgroundColor: COLORS.accentLight },
-  moodEmoji:     { fontSize: 22 },
-  bodyInput:     { fontSize: 15, color: COLORS.text, minHeight: 160, lineHeight: 24, paddingTop: 4 },
-  saveBtn:       { alignSelf: 'flex-end', marginTop: 16, backgroundColor: COLORS.accent, paddingHorizontal: 20, paddingVertical: 12, borderRadius: RADIUS.md },
-  saveBtnText:   { color: '#fff', fontWeight: '600', fontSize: 15 },
-  todayMood:     { fontSize: 28, marginBottom: 8 },
-  // Past entries
-  entriesList:   { gap: 12 },
-  entryCard:     { backgroundColor: COLORS.bgCard, borderRadius: RADIUS.lg, padding: 16, ...SHADOW.card },
-  entryHeader:   { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  entryMood:     { fontSize: 28 },
-  entryDate:     { fontSize: 13, color: COLORS.textMuted },
-  entryBody:     { fontSize: 14, color: COLORS.text, lineHeight: 22 },
-  empty:         { fontSize: 14, color: COLORS.textFaint },
-});
+function makeStyles(C) {
+  return StyleSheet.create({
+    safe:          { flex: 1, backgroundColor: C.bg },
+    scroll:        { flex: 1 },
+    content:       { padding: 20 },
+    pageTitle:     { fontSize: 32, fontWeight: '700', color: C.text },
+    pageSubtitle:  { fontSize: 14, color: C.textMuted, marginBottom: 20 },
+    // Tabs
+    tabs:          { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: C.border, marginBottom: 20 },
+    tab:           { paddingVertical: 10, paddingHorizontal: 4, marginRight: 24, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+    tabActive:     { borderBottomColor: C.accent },
+    tabText:       { fontSize: 15, color: C.textMuted, fontWeight: '500' },
+    tabTextActive: { color: C.accent, fontWeight: '600' },
+    // Today card
+    card:          { backgroundColor: C.bgCard, borderRadius: RADIUS.lg, padding: 18, ...SHADOW.card },
+    cardTitleRow:  { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
+    cardIcon:      { fontSize: 18 },
+    cardTitle:     { fontSize: 16, fontWeight: '600', color: C.text },
+    moodPrompt:    { fontSize: 14, fontWeight: '500', color: C.text, marginBottom: 10 },
+    moodRow:       { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+    moodBtn:       { width: 42, height: 42, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
+    moodBtnActive: { borderColor: C.accent, backgroundColor: C.accentLight },
+    moodEmoji:     { fontSize: 22 },
+    bodyInput:     { fontSize: 15, color: C.text, minHeight: 160, lineHeight: 24, paddingTop: 4 },
+    saveBtn:       { alignSelf: 'flex-end', marginTop: 16, backgroundColor: C.accent, paddingHorizontal: 20, paddingVertical: 12, borderRadius: RADIUS.md },
+    saveBtnText:   { color: '#fff', fontWeight: '600', fontSize: 15 },
+    todayMood:     { fontSize: 28, marginBottom: 8 },
+    // Past entries
+    entriesList:   { gap: 12 },
+    entryCard:     { backgroundColor: C.bgCard, borderRadius: RADIUS.lg, padding: 16, ...SHADOW.card },
+    entryHeader:   { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+    entryMood:     { fontSize: 28 },
+    entryDate:     { fontSize: 13, color: C.textMuted },
+    entryBody:     { fontSize: 14, color: C.text, lineHeight: 22 },
+    empty:         { fontSize: 14, color: C.textFaint },
+  });
+}

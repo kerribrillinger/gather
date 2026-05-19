@@ -11,6 +11,7 @@ export const COLORS = {
   accent:      '#C4953A',
   accentLight: '#F5EDDA',
   sage:        '#5D6E63',
+  danger:      '#C0392B',
   // Dark overrides applied at component level when theme === 'dark'
   dark: {
     bg:          '#1A1F1B',

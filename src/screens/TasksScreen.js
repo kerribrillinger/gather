@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
-  Pressable, StyleSheet, Modal, FlatList,
+  Pressable, StyleSheet, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useApp } from '../AppContext';
+import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatlist';
+import { useApp, useTheme } from '../AppContext';
 import { generateId } from '../storage';
-import { COLORS, RADIUS, SHADOW, LIST_BADGE_COLORS } from '../theme';
+import { RADIUS, SHADOW, LIST_BADGE_COLORS } from '../theme';
 
 function getListBadge(name) {
   return (name || '?').charAt(0).toUpperCase();
@@ -14,6 +15,9 @@ function getListBadge(name) {
 
 export default function TasksScreen() {
   const { state, setState } = useApp();
+  const C = useTheme();
+  const styles = useMemo(() => makeStyles(C), [C]);
+
   const [activeListId, setActiveListId] = useState(null);
   const [taskInput, setTaskInput] = useState('');
   const [taskRecurrence, setTaskRecurrence] = useState('once');
@@ -57,7 +61,7 @@ export default function TasksScreen() {
       let updated = (s.workTodos[currentList.id] || []).map((t) =>
         t.id === id ? { ...t, completed: markingDone, completedAt: markingDone ? new Date().toISOString() : null } : t
       );
-      // Spawn recurring daily todo
+      // Spawn recurring daily todo when marked complete
       if (markingDone && todo.recurrence === 'daily') {
         updated = [{
           id: generateId(), text: todo.text, completed: false,
@@ -91,6 +95,15 @@ export default function TasksScreen() {
     }));
   }
 
+  function reorderTodos(newData) {
+    if (!currentList) return;
+    // Merge reordered open/important items back; completed items stay at bottom
+    setState((s) => ({
+      ...s,
+      workTodos: { ...s.workTodos, [currentList.id]: newData },
+    }));
+  }
+
   function createList() {
     const name = newListName.trim();
     if (!name) return;
@@ -113,9 +126,14 @@ export default function TasksScreen() {
   const doneCount = todos.filter((t) => t.completed).length;
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Page title */}
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      {/* Header area — everything above the draggable list */}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.headerContent}
+        scrollEnabled={false}
+        nestedScrollEnabled
+      >
         <Text style={styles.pageTitle}>My Lists</Text>
 
         {/* List tabs */}
@@ -157,7 +175,7 @@ export default function TasksScreen() {
           <TextInput
             style={styles.addInput}
             placeholder="Add a task…"
-            placeholderTextColor={COLORS.textFaint}
+            placeholderTextColor={C.textFaint}
             value={taskInput}
             onChangeText={setTaskInput}
             onSubmitEditing={addTodo}
@@ -181,48 +199,59 @@ export default function TasksScreen() {
             </TouchableOpacity>
           ))}
         </View>
-
-        {/* Task list */}
-        <View style={styles.todoList}>
-          {sorted.length === 0 && <Text style={styles.empty}>No tasks yet. Add one above.</Text>}
-          {sorted.map((todo) => (
-            <View key={todo.id} style={[styles.todoItem, todo.important && !todo.completed && styles.todoImportant]}>
-              <Pressable style={[styles.check, todo.completed && styles.checkDone]} onPress={() => toggleTodo(todo.id)}>
-                {todo.completed && <Text style={styles.checkMark}>✓</Text>}
-              </Pressable>
-              <Text style={[styles.todoText, todo.completed && styles.todoTextDone]} numberOfLines={2}>{todo.text}</Text>
-              {!todo.completed && (
-                <TouchableOpacity onPress={() => toggleImportant(todo.id)}>
-                  <Text style={[styles.star, todo.important && styles.starActive]}>★</Text>
-                </TouchableOpacity>
-              )}
-              {todo.recurrence === 'daily' && <Text style={styles.recurBadge}>↻</Text>}
-              <TouchableOpacity onPress={() => deleteTodo(todo.id)}>
-                <Text style={styles.deleteBtn}>×</Text>
-              </TouchableOpacity>
-            </View>
-          ))}
-        </View>
-
-        {/* Notes */}
-        {currentList && (
-          <View style={styles.notesSection}>
-            <Text style={styles.notesLabel}>NOTES</Text>
-            <TextInput
-              style={styles.notesInput}
-              multiline
-              placeholder="Jot anything down…"
-              placeholderTextColor={COLORS.textFaint}
-              value={state.workNotes?.[currentList.id] || ''}
-              onChangeText={(v) => setState((s) => ({
-                ...s, workNotes: { ...s.workNotes, [currentList.id]: v },
-              }))}
-            />
-          </View>
-        )}
-
-        <View style={{ height: 32 }} />
       </ScrollView>
+
+      {/* Draggable task list */}
+      {sorted.length === 0 ? (
+        <Text style={[styles.empty, { paddingHorizontal: 20 }]}>No tasks yet. Add one above.</Text>
+      ) : (
+        <DraggableFlatList
+          style={{ flex: 1 }}
+          data={sorted}
+          keyExtractor={(item) => item.id}
+          onDragEnd={({ data }) => reorderTodos(data)}
+          contentContainerStyle={[styles.todoList, { paddingBottom: 32 }]}
+          renderItem={({ item: todo, drag, isActive }) => (
+            <ScaleDecorator>
+              <View style={[styles.todoItem, todo.important && !todo.completed && styles.todoImportant, isActive && styles.todoItemDragging]}>
+                <TouchableOpacity onLongPress={drag} style={styles.dragHandle}>
+                  <Text style={styles.dragHandleIcon}>⠿</Text>
+                </TouchableOpacity>
+                <Pressable style={[styles.check, todo.completed && styles.checkDone]} onPress={() => toggleTodo(todo.id)}>
+                  {todo.completed && <Text style={styles.checkMark}>✓</Text>}
+                </Pressable>
+                <Text style={[styles.todoText, todo.completed && styles.todoTextDone]} numberOfLines={2}>{todo.text}</Text>
+                {!todo.completed && (
+                  <TouchableOpacity onPress={() => toggleImportant(todo.id)}>
+                    <Text style={[styles.star, todo.important && styles.starActive]}>★</Text>
+                  </TouchableOpacity>
+                )}
+                {todo.recurrence === 'daily' && <Text style={styles.recurBadge}>↻</Text>}
+                <TouchableOpacity onPress={() => deleteTodo(todo.id)}>
+                  <Text style={styles.deleteBtn}>×</Text>
+                </TouchableOpacity>
+              </View>
+            </ScaleDecorator>
+          )}
+        />
+      )}
+
+      {/* Notes */}
+      {currentList && (
+        <View style={[styles.notesSection, { paddingHorizontal: 20, paddingBottom: 20 }]}>
+          <Text style={styles.notesLabel}>NOTES</Text>
+          <TextInput
+            style={styles.notesInput}
+            multiline
+            placeholder="Jot anything down…"
+            placeholderTextColor={C.textFaint}
+            value={state.workNotes?.[currentList.id] || ''}
+            onChangeText={(v) => setState((s) => ({
+              ...s, workNotes: { ...s.workNotes, [currentList.id]: v },
+            }))}
+          />
+        </View>
+      )}
 
       {/* New List Modal */}
       <Modal visible={showNewList} animationType="slide" presentationStyle="pageSheet">
@@ -238,7 +267,7 @@ export default function TasksScreen() {
             <TextInput
               style={styles.fieldInput}
               placeholder="e.g. Work Tasks"
-              placeholderTextColor={COLORS.textFaint}
+              placeholderTextColor={C.textFaint}
               value={newListName}
               onChangeText={setNewListName}
               autoFocus
@@ -282,79 +311,84 @@ export default function TasksScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe:            { flex: 1, backgroundColor: COLORS.bg },
-  scroll:          { flex: 1 },
-  content:         { padding: 20 },
-  pageTitle:       { fontSize: 32, fontWeight: '700', color: COLORS.text, marginBottom: 16 },
-  // Tabs
-  tabScroll:       { marginHorizontal: -20, marginBottom: 20 },
-  tabs:            { paddingHorizontal: 20, gap: 8 },
-  tab:             { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: RADIUS.xl, backgroundColor: COLORS.bgCard, borderWidth: 1, borderColor: COLORS.border },
-  tabActive:       { borderColor: COLORS.accent },
-  tabBadge:        { width: 22, height: 22, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
-  tabBadgeText:    { fontSize: 11, fontWeight: '700' },
-  tabLabel:        { fontSize: 13, fontWeight: '500', color: COLORS.textMuted },
-  tabLabelActive:  { color: COLORS.accent, fontWeight: '600' },
-  tabAdd:          { paddingVertical: 8, paddingHorizontal: 14, borderRadius: RADIUS.xl, borderWidth: 1, borderColor: COLORS.border, borderStyle: 'dashed', justifyContent: 'center' },
-  tabAddText:      { fontSize: 13, color: COLORS.textMuted },
-  // List header
-  listHeader:      { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
-  listBadge:       { width: 44, height: 44, borderRadius: RADIUS.md, alignItems: 'center', justifyContent: 'center' },
-  listBadgeText:   { fontSize: 20, fontWeight: '700' },
-  listName:        { fontSize: 22, fontWeight: '700', color: COLORS.text },
-  listMeta:        { fontSize: 13, color: COLORS.textMuted },
-  // Add task
-  addRow:              { flexDirection: 'row', gap: 10, marginBottom: 8 },
-  addInput:            { flex: 1, backgroundColor: COLORS.bgCard, borderRadius: RADIUS.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: COLORS.text, borderWidth: 1, borderColor: COLORS.border },
-  addBtn:              { backgroundColor: COLORS.accent, borderRadius: RADIUS.md, paddingHorizontal: 18, justifyContent: 'center' },
-  addBtnText:          { color: '#fff', fontWeight: '600', fontSize: 15 },
-  recurRow:            { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
-  recurLabel:          { fontSize: 12, color: COLORS.textMuted, fontWeight: '500' },
-  recurBtn:            { paddingHorizontal: 12, paddingVertical: 5, borderRadius: RADIUS.xl, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.bgCard },
-  recurBtnActive:      { borderColor: COLORS.accent, backgroundColor: COLORS.accentLight },
-  recurBtnText:        { fontSize: 12, color: COLORS.textMuted, fontWeight: '500' },
-  recurBtnTextActive:  { color: COLORS.accent, fontWeight: '700' },
-  // Work toggle (new list modal)
-  workToggleRow:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.bgCard, borderRadius: RADIUS.md, padding: 14, borderWidth: 1, borderColor: COLORS.border, marginBottom: 4 },
-  workToggleLabel:     { fontSize: 15, color: COLORS.text, fontWeight: '500' },
-  workToggleHint:      { fontSize: 12, color: COLORS.textMuted, marginTop: 2 },
-  workToggleBtn:       { paddingHorizontal: 12, paddingVertical: 7, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.bg },
-  workToggleBtnActive: { borderColor: COLORS.accent, backgroundColor: COLORS.accentLight },
-  workToggleBtnText:     { fontSize: 13, color: COLORS.textMuted, fontWeight: '500' },
-  workToggleBtnTextActive: { color: COLORS.accent, fontWeight: '700' },
-  // Todos
-  todoList:        { gap: 8 },
-  todoItem:        { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: COLORS.bgCard, borderRadius: RADIUS.md, padding: 12, ...SHADOW.card },
-  todoImportant:   { borderLeftWidth: 3, borderLeftColor: COLORS.accent },
-  check:           { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  checkDone:       { backgroundColor: COLORS.sage, borderColor: COLORS.sage },
-  checkMark:       { color: '#fff', fontSize: 11, fontWeight: '700' },
-  todoText:        { flex: 1, fontSize: 15, color: COLORS.text },
-  todoTextDone:    { textDecorationLine: 'line-through', color: COLORS.textMuted },
-  star:            { fontSize: 18, color: COLORS.border },
-  starActive:      { color: COLORS.accent },
-  recurBadge:      { fontSize: 13, color: COLORS.accent },
-  deleteBtn:       { fontSize: 20, color: COLORS.textFaint, lineHeight: 22 },
-  empty:           { fontSize: 14, color: COLORS.textFaint, paddingVertical: 8 },
-  // Notes
-  notesSection:    { marginTop: 24 },
-  notesLabel:      { fontSize: 11, fontWeight: '700', color: COLORS.textMuted, letterSpacing: 0.8, marginBottom: 8 },
-  notesInput:      { backgroundColor: COLORS.bgCard, borderRadius: RADIUS.md, padding: 14, fontSize: 14, color: COLORS.text, minHeight: 100, textAlignVertical: 'top', borderWidth: 1, borderColor: COLORS.border },
-  // Modal
-  modal:           { flex: 1, backgroundColor: COLORS.bg },
-  modalHeader:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  modalTitle:      { fontSize: 20, fontWeight: '700', color: COLORS.text },
-  modalClose:      { fontSize: 18, color: COLORS.textMuted },
-  modalBody:       { flex: 1, padding: 20 },
-  modalFooter:     { flexDirection: 'row', gap: 12, padding: 20 },
-  fieldLabel:      { fontSize: 11, fontWeight: '700', color: COLORS.textMuted, letterSpacing: 0.8, marginBottom: 8 },
-  fieldInput:      { backgroundColor: COLORS.bgCard, borderRadius: RADIUS.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: COLORS.text, borderWidth: 1, borderColor: COLORS.border },
-  colorGrid:       { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  colorDot:        { width: 36, height: 36, borderRadius: 18 },
-  colorDotActive:  { borderWidth: 3, borderColor: COLORS.accent },
-  cancelBtn:       { flex: 1, padding: 14, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center' },
-  cancelBtnText:   { fontSize: 15, color: COLORS.textMuted, fontWeight: '500' },
-  confirmBtn:      { flex: 1, padding: 14, borderRadius: RADIUS.md, backgroundColor: COLORS.accent, alignItems: 'center' },
-  confirmBtnText:  { fontSize: 15, color: '#fff', fontWeight: '600' },
-});
+function makeStyles(C) {
+  return StyleSheet.create({
+    safe:            { flex: 1, backgroundColor: C.bg },
+    scroll:          { flex: 0 },
+    headerContent:   { paddingHorizontal: 20, paddingTop: 20 },
+    pageTitle:       { fontSize: 32, fontWeight: '700', color: C.text, marginBottom: 16 },
+    // Tabs
+    tabScroll:       { marginHorizontal: -20, marginBottom: 20 },
+    tabs:            { paddingHorizontal: 20, gap: 8 },
+    tab:             { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: RADIUS.xl, backgroundColor: C.bgCard, borderWidth: 1, borderColor: C.border },
+    tabActive:       { borderColor: C.accent },
+    tabBadge:        { width: 22, height: 22, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
+    tabBadgeText:    { fontSize: 11, fontWeight: '700' },
+    tabLabel:        { fontSize: 13, fontWeight: '500', color: C.textMuted },
+    tabLabelActive:  { color: C.accent, fontWeight: '600' },
+    tabAdd:          { paddingVertical: 8, paddingHorizontal: 14, borderRadius: RADIUS.xl, borderWidth: 1, borderColor: C.border, borderStyle: 'dashed', justifyContent: 'center' },
+    tabAddText:      { fontSize: 13, color: C.textMuted },
+    // List header
+    listHeader:      { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
+    listBadge:       { width: 44, height: 44, borderRadius: RADIUS.md, alignItems: 'center', justifyContent: 'center' },
+    listBadgeText:   { fontSize: 20, fontWeight: '700' },
+    listName:        { fontSize: 22, fontWeight: '700', color: C.text },
+    listMeta:        { fontSize: 13, color: C.textMuted },
+    // Add task
+    addRow:              { flexDirection: 'row', gap: 10, marginBottom: 8 },
+    addInput:            { flex: 1, backgroundColor: C.bgCard, borderRadius: RADIUS.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: C.text, borderWidth: 1, borderColor: C.border },
+    addBtn:              { backgroundColor: C.accent, borderRadius: RADIUS.md, paddingHorizontal: 18, justifyContent: 'center' },
+    addBtnText:          { color: '#fff', fontWeight: '600', fontSize: 15 },
+    recurRow:            { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
+    recurLabel:          { fontSize: 12, color: C.textMuted, fontWeight: '500' },
+    recurBtn:            { paddingHorizontal: 12, paddingVertical: 5, borderRadius: RADIUS.xl, borderWidth: 1, borderColor: C.border, backgroundColor: C.bgCard },
+    recurBtnActive:      { borderColor: C.accent, backgroundColor: C.accentLight },
+    recurBtnText:        { fontSize: 12, color: C.textMuted, fontWeight: '500' },
+    recurBtnTextActive:  { color: C.accent, fontWeight: '700' },
+    // Work toggle (new list modal)
+    workToggleRow:           { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.bgCard, borderRadius: RADIUS.md, padding: 14, borderWidth: 1, borderColor: C.border, marginBottom: 4 },
+    workToggleLabel:         { fontSize: 15, color: C.text, fontWeight: '500' },
+    workToggleHint:          { fontSize: 12, color: C.textMuted, marginTop: 2 },
+    workToggleBtn:           { paddingHorizontal: 12, paddingVertical: 7, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border, backgroundColor: C.bg },
+    workToggleBtnActive:     { borderColor: C.accent, backgroundColor: C.accentLight },
+    workToggleBtnText:       { fontSize: 13, color: C.textMuted, fontWeight: '500' },
+    workToggleBtnTextActive: { color: C.accent, fontWeight: '700' },
+    // Todos
+    todoList:          { gap: 8, paddingHorizontal: 20 },
+    todoItem:          { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: C.bgCard, borderRadius: RADIUS.md, padding: 12, ...SHADOW.card },
+    todoImportant:     { borderLeftWidth: 3, borderLeftColor: C.accent },
+    todoItemDragging:  { opacity: 0.9, elevation: 8, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 8 },
+    dragHandle:        { paddingHorizontal: 4, paddingVertical: 8 },
+    dragHandleIcon:    { fontSize: 16, color: C.textFaint },
+    check:             { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: C.border, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+    checkDone:         { backgroundColor: C.sage, borderColor: C.sage },
+    checkMark:         { color: '#fff', fontSize: 11, fontWeight: '700' },
+    todoText:          { flex: 1, fontSize: 15, color: C.text },
+    todoTextDone:      { textDecorationLine: 'line-through', color: C.textMuted },
+    star:              { fontSize: 18, color: C.border },
+    starActive:        { color: C.accent },
+    recurBadge:        { fontSize: 13, color: C.accent },
+    deleteBtn:         { fontSize: 20, color: C.textFaint, lineHeight: 22 },
+    empty:             { fontSize: 14, color: C.textFaint, paddingVertical: 8 },
+    // Notes
+    notesSection:    { marginTop: 24 },
+    notesLabel:      { fontSize: 11, fontWeight: '700', color: C.textMuted, letterSpacing: 0.8, marginBottom: 8 },
+    notesInput:      { backgroundColor: C.bgCard, borderRadius: RADIUS.md, padding: 14, fontSize: 14, color: C.text, minHeight: 100, textAlignVertical: 'top', borderWidth: 1, borderColor: C.border },
+    // Modal
+    modal:           { flex: 1, backgroundColor: C.bg },
+    modalHeader:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: C.border },
+    modalTitle:      { fontSize: 20, fontWeight: '700', color: C.text },
+    modalClose:      { fontSize: 18, color: C.textMuted },
+    modalBody:       { flex: 1, padding: 20 },
+    modalFooter:     { flexDirection: 'row', gap: 12, padding: 20 },
+    fieldLabel:      { fontSize: 11, fontWeight: '700', color: C.textMuted, letterSpacing: 0.8, marginBottom: 8 },
+    fieldInput:      { backgroundColor: C.bgCard, borderRadius: RADIUS.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: C.text, borderWidth: 1, borderColor: C.border },
+    colorGrid:       { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+    colorDot:        { width: 36, height: 36, borderRadius: 18 },
+    colorDotActive:  { borderWidth: 3, borderColor: C.accent },
+    cancelBtn:       { flex: 1, padding: 14, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border, alignItems: 'center' },
+    cancelBtnText:   { fontSize: 15, color: C.textMuted, fontWeight: '500' },
+    confirmBtn:      { flex: 1, padding: 14, borderRadius: RADIUS.md, backgroundColor: C.accent, alignItems: 'center' },
+    confirmBtnText:  { fontSize: 15, color: '#fff', fontWeight: '600' },
+  });
+}

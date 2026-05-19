@@ -1,73 +1,81 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { Text } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
+import { Ionicons } from '@expo/vector-icons';
 
-import { AppProvider } from './src/AppContext';
+import { AppProvider, useApp, useTheme } from './src/AppContext';
 import HomeScreen    from './src/screens/HomeScreen';
 import HobbiesScreen from './src/screens/HobbiesScreen';
 import JournalScreen from './src/screens/JournalScreen';
 import TasksScreen   from './src/screens/TasksScreen';
 import HabitsScreen  from './src/screens/HabitsScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
-import { COLORS } from './src/theme';
 
 const Tab = createBottomTabNavigator();
 
 const TAB_ICONS = {
-  Home:     { active: '🏠', inactive: '🏠' },
-  Hobbies:  { active: '🎯', inactive: '🎯' },
-  Journal:  { active: '📖', inactive: '📖' },
-  Tasks:    { active: '✅', inactive: '✅' },
-  Habits:   { active: '⭐', inactive: '⭐' },
-  Settings: { active: '⚙️', inactive: '⚙️' },
+  Home:     { active: 'home',             inactive: 'home-outline'             },
+  Hobbies:  { active: 'library',          inactive: 'library-outline'          },
+  Journal:  { active: 'book',             inactive: 'book-outline'             },
+  Tasks:    { active: 'checkmark-circle', inactive: 'checkmark-circle-outline' },
+  Habits:   { active: 'star',             inactive: 'star-outline'             },
+  Settings: { active: 'settings',         inactive: 'settings-outline'         },
 };
 
-function TabIcon({ name, focused }) {
+// Separate component so hooks can read from AppProvider above it
+function AppNavigator() {
+  const insets = useSafeAreaInsets();
+  const C = useTheme();
+  const { state } = useApp();
+  const isDark = state?.theme === 'dark';
+
   return (
-    <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.5 }}>
-      {TAB_ICONS[name]?.active || '●'}
-    </Text>
+    <NavigationContainer>
+      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={C.bg} />
+      <Tab.Navigator
+        screenOptions={({ route }) => ({
+          headerShown: false,
+          tabBarIcon: ({ focused, color }) => (
+            <Ionicons
+              name={TAB_ICONS[route.name]?.[focused ? 'active' : 'inactive'] || 'circle-outline'}
+              size={22}
+              color={color}
+            />
+          ),
+          tabBarStyle: {
+            backgroundColor: C.bgCard,
+            borderTopColor: C.border,
+            borderTopWidth: 1,
+            paddingTop: 6,
+            paddingBottom: insets.bottom,
+            height: 60 + insets.bottom,
+          },
+          tabBarActiveTintColor: C.accent,
+          tabBarInactiveTintColor: C.textMuted,
+        })}
+      >
+        <Tab.Screen name="Home"     component={HomeScreen} />
+        <Tab.Screen name="Hobbies"  component={HobbiesScreen} />
+        <Tab.Screen name="Journal"  component={JournalScreen} />
+        <Tab.Screen name="Tasks"    component={TasksScreen} />
+        <Tab.Screen name="Habits"   component={HabitsScreen} />
+        <Tab.Screen name="Settings" component={SettingsScreen} />
+      </Tab.Navigator>
+    </NavigationContainer>
   );
 }
 
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <AppProvider>
-        <NavigationContainer>
-          <StatusBar style="dark" backgroundColor={COLORS.bg} />
-          <Tab.Navigator
-            screenOptions={({ route }) => ({
-              headerShown: false,
-              tabBarIcon: ({ focused }) => <TabIcon name={route.name} focused={focused} />,
-              tabBarLabel: ({ focused, color }) => (
-                <Text style={{ fontSize: 10, color, fontWeight: focused ? '700' : '500', marginBottom: 2 }}>
-                  {route.name}
-                </Text>
-              ),
-              tabBarStyle: {
-                backgroundColor: COLORS.bgCard,
-                borderTopColor: COLORS.border,
-                borderTopWidth: 1,
-                paddingTop: 6,
-                height: 60,
-              },
-              tabBarActiveTintColor: COLORS.accent,
-              tabBarInactiveTintColor: COLORS.textMuted,
-            })}
-          >
-            <Tab.Screen name="Home"     component={HomeScreen} />
-            <Tab.Screen name="Hobbies"  component={HobbiesScreen} />
-            <Tab.Screen name="Journal"  component={JournalScreen} />
-            <Tab.Screen name="Tasks"    component={TasksScreen} />
-            <Tab.Screen name="Habits"   component={HabitsScreen} />
-            <Tab.Screen name="Settings" component={SettingsScreen} />
-          </Tab.Navigator>
-        </NavigationContainer>
-      </AppProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <AppProvider>
+          <AppNavigator />
+        </AppProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

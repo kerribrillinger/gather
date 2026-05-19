@@ -1,6 +1,7 @@
 // Global state context — mirrors how appState works on desktop
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { loadData, saveData } from './storage';
+import { COLORS } from './theme';
 
 const AppContext = createContext(null);
 
@@ -63,4 +64,10 @@ export function AppProvider({ children }) {
 
 export function useApp() {
   return useContext(AppContext);
+}
+
+export function useTheme() {
+  const ctx = useContext(AppContext);
+  const isDark = ctx?.state?.theme === 'dark';
+  return isDark ? { ...COLORS, ...COLORS.dark } : COLORS;
 }

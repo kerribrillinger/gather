@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
-  Pressable, StyleSheet, Modal, FlatList,
+  Pressable, StyleSheet, Modal, FlatList, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useApp } from '../AppContext';
+import * as ImagePicker from 'expo-image-picker';
+import { useApp, useTheme } from '../AppContext';
 import { generateId } from '../storage';
-import { COLORS, RADIUS, SHADOW } from '../theme';
+import { RADIUS, SHADOW } from '../theme';
 
 const CATEGORY_OPTIONS = ['📚 Book', '🎬 Movie', '📺 Show', '🎮 Game', '🎵 Music', '🎙️ Podcast', '✏️ Other'];
 
@@ -22,13 +23,28 @@ function categoryEmoji(cat) {
   return found ? found.split(' ')[0] : '🎯';
 }
 
+async function pickCoverImage() {
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ['images'],
+    allowsEditing: true,
+    aspect: [2, 3],
+    quality: 0.8,
+  });
+  if (!result.canceled) return result.assets[0].uri;
+  return null;
+}
+
 export default function HobbiesScreen() {
   const { state, setState } = useApp();
+  const C = useTheme();
+  const styles = useMemo(() => makeStyles(C), [C]);
+
   const [activeStatus, setActiveStatus] = useState('current');
   const [showAdd, setShowAdd] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newCategory, setNewCategory] = useState('📚 Book');
   const [newNotes, setNewNotes] = useState('');
+  const [newCoverUri, setNewCoverUri] = useState(null);
 
   const items = (state.currentlyConsuming || []).filter(
     (i) => (i.status || 'current') === activeStatus
@@ -43,12 +59,14 @@ export default function HobbiesScreen() {
       category: newCategory,
       notes: newNotes.trim(),
       status: 'current',
+      coverUri: newCoverUri,
       createdAt: new Date().toISOString(),
     };
     setState((s) => ({ ...s, currentlyConsuming: [entry, ...(s.currentlyConsuming || [])] }));
     setNewTitle('');
     setNewNotes('');
     setNewCategory('📚 Book');
+    setNewCoverUri(null);
     setShowAdd(false);
   }
 
@@ -77,7 +95,7 @@ export default function HobbiesScreen() {
   }, {});
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.pageHeader}>
           <View>
@@ -129,7 +147,11 @@ export default function HobbiesScreen() {
             {items.map((item) => (
               <View key={item.id} style={styles.itemCard}>
                 <View style={styles.itemTop}>
-                  <Text style={styles.itemEmoji}>{categoryEmoji(item.category)}</Text>
+                  {item.coverUri ? (
+                    <Image source={{ uri: item.coverUri }} style={styles.itemCover} />
+                  ) : (
+                    <Text style={styles.itemEmoji}>{categoryEmoji(item.category)}</Text>
+                  )}
                   <TouchableOpacity onPress={() => deleteItem(item.id)} style={styles.deleteBtn}>
                     <Text style={styles.deleteBtnText}>×</Text>
                   </TouchableOpacity>
@@ -160,11 +182,32 @@ export default function HobbiesScreen() {
             </TouchableOpacity>
           </View>
           <ScrollView style={styles.modalBody}>
+            <Text style={styles.fieldLabel}>COVER IMAGE (optional)</Text>
+            <TouchableOpacity
+              style={styles.coverPickerBtn}
+              onPress={async () => {
+                const uri = await pickCoverImage();
+                if (uri) setNewCoverUri(uri);
+              }}
+            >
+              {newCoverUri ? (
+                <Image source={{ uri: newCoverUri }} style={styles.coverPickerPreview} />
+              ) : (
+                <View style={styles.coverPickerPlaceholder}>
+                  <Text style={styles.coverPickerPlaceholderText}>Tap to add cover</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            {newCoverUri && (
+              <TouchableOpacity onPress={() => setNewCoverUri(null)} style={{ marginBottom: 16 }}>
+                <Text style={{ fontSize: 13, color: C.textMuted }}>Remove image</Text>
+              </TouchableOpacity>
+            )}
             <Text style={styles.fieldLabel}>TITLE</Text>
             <TextInput
               style={styles.fieldInput}
               placeholder="e.g. Dune, The Bear, Hollow Knight…"
-              placeholderTextColor={COLORS.textFaint}
+              placeholderTextColor={C.textFaint}
               value={newTitle}
               onChangeText={setNewTitle}
               autoFocus
@@ -185,7 +228,7 @@ export default function HobbiesScreen() {
             <TextInput
               style={[styles.fieldInput, styles.fieldInputMulti]}
               placeholder="Any thoughts, progress, etc…"
-              placeholderTextColor={COLORS.textFaint}
+              placeholderTextColor={C.textFaint}
               value={newNotes}
               onChangeText={setNewNotes}
               multiline
@@ -206,59 +249,67 @@ export default function HobbiesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe:               { flex: 1, backgroundColor: COLORS.bg },
-  scroll:             { flex: 1 },
-  content:            { padding: 20 },
-  pageHeader:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
-  pageTitle:          { fontSize: 32, fontWeight: '700', color: COLORS.text },
-  pageSubtitle:       { fontSize: 14, color: COLORS.textMuted, marginTop: 2 },
-  addHeaderBtn:       { backgroundColor: COLORS.accent, paddingHorizontal: 14, paddingVertical: 8, borderRadius: RADIUS.md, marginTop: 6 },
-  addHeaderBtnText:   { color: '#fff', fontWeight: '600', fontSize: 14 },
-  // Tabs
-  tabs:               { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.border, marginBottom: 20 },
-  tab:                { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 4, marginRight: 20, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabActive:          { borderBottomColor: COLORS.accent },
-  tabText:            { fontSize: 15, color: COLORS.textMuted, fontWeight: '500' },
-  tabTextActive:      { color: COLORS.accent, fontWeight: '600' },
-  tabBadge:           { backgroundColor: COLORS.border, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 1 },
-  tabBadgeActive:     { backgroundColor: COLORS.accentLight },
-  tabBadgeText:       { fontSize: 11, fontWeight: '700', color: COLORS.textMuted },
-  tabBadgeTextActive: { color: COLORS.accent },
-  // Empty state
-  emptyState:         { alignItems: 'center', paddingVertical: 60 },
-  emptyIcon:          { fontSize: 40, marginBottom: 12 },
-  emptyTitle:         { fontSize: 16, fontWeight: '600', color: COLORS.text, marginBottom: 6 },
-  emptyHint:          { fontSize: 13, color: COLORS.textMuted, textAlign: 'center', maxWidth: 240 },
-  // Grid
-  grid:               { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  itemCard:           { width: '47%', backgroundColor: COLORS.bgCard, borderRadius: RADIUS.lg, padding: 14, ...SHADOW.card },
-  itemTop:            { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  itemEmoji:          { fontSize: 28 },
-  deleteBtn:          { padding: 4 },
-  deleteBtnText:      { fontSize: 18, color: COLORS.textFaint, lineHeight: 20 },
-  itemTitle:          { fontSize: 14, fontWeight: '600', color: COLORS.text, marginBottom: 4, lineHeight: 20 },
-  itemCategory:       { fontSize: 12, color: COLORS.textMuted, marginBottom: 6 },
-  itemNotes:          { fontSize: 12, color: COLORS.textMuted, lineHeight: 18, marginBottom: 8 },
-  statusBtn:          { marginTop: 'auto', paddingTop: 8, borderTopWidth: 1, borderTopColor: COLORS.border },
-  statusBtnText:      { fontSize: 12, color: COLORS.accent, fontWeight: '600' },
-  // Modal
-  modal:              { flex: 1, backgroundColor: COLORS.bg },
-  modalHeader:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  modalTitle:         { fontSize: 20, fontWeight: '700', color: COLORS.text },
-  modalClose:         { fontSize: 18, color: COLORS.textMuted },
-  modalBody:          { flex: 1, padding: 20 },
-  modalFooter:        { flexDirection: 'row', gap: 12, padding: 20 },
-  fieldLabel:         { fontSize: 11, fontWeight: '700', color: COLORS.textMuted, letterSpacing: 0.8, marginBottom: 8 },
-  fieldInput:         { backgroundColor: COLORS.bgCard, borderRadius: RADIUS.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: COLORS.text, borderWidth: 1, borderColor: COLORS.border },
-  fieldInputMulti:    { minHeight: 100, textAlignVertical: 'top' },
-  categoryGrid:       { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  catChip:            { paddingHorizontal: 12, paddingVertical: 8, borderRadius: RADIUS.xl, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.bgCard },
-  catChipActive:      { borderColor: COLORS.accent, backgroundColor: COLORS.accentLight },
-  catChipText:        { fontSize: 13, color: COLORS.textMuted },
-  catChipTextActive:  { color: COLORS.accent, fontWeight: '600' },
-  cancelBtn:          { flex: 1, padding: 14, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center' },
-  cancelBtnText:      { fontSize: 15, color: COLORS.textMuted, fontWeight: '500' },
-  confirmBtn:         { flex: 1, padding: 14, borderRadius: RADIUS.md, backgroundColor: COLORS.accent, alignItems: 'center' },
-  confirmBtnText:     { fontSize: 15, color: '#fff', fontWeight: '600' },
-});
+function makeStyles(C) {
+  return StyleSheet.create({
+    safe:               { flex: 1, backgroundColor: C.bg },
+    scroll:             { flex: 1 },
+    content:            { padding: 20 },
+    pageHeader:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
+    pageTitle:          { fontSize: 32, fontWeight: '700', color: C.text },
+    pageSubtitle:       { fontSize: 14, color: C.textMuted, marginTop: 2 },
+    addHeaderBtn:       { backgroundColor: C.accent, paddingHorizontal: 14, paddingVertical: 8, borderRadius: RADIUS.md, marginTop: 6 },
+    addHeaderBtnText:   { color: '#fff', fontWeight: '600', fontSize: 14 },
+    // Tabs
+    tabs:               { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: C.border, marginBottom: 20 },
+    tab:                { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 4, marginRight: 20, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+    tabActive:          { borderBottomColor: C.accent },
+    tabText:            { fontSize: 15, color: C.textMuted, fontWeight: '500' },
+    tabTextActive:      { color: C.accent, fontWeight: '600' },
+    tabBadge:           { backgroundColor: C.border, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 1 },
+    tabBadgeActive:     { backgroundColor: C.accentLight },
+    tabBadgeText:       { fontSize: 11, fontWeight: '700', color: C.textMuted },
+    tabBadgeTextActive: { color: C.accent },
+    // Empty state
+    emptyState:         { alignItems: 'center', paddingVertical: 60 },
+    emptyIcon:          { fontSize: 40, marginBottom: 12 },
+    emptyTitle:         { fontSize: 16, fontWeight: '600', color: C.text, marginBottom: 6 },
+    emptyHint:          { fontSize: 13, color: C.textMuted, textAlign: 'center', maxWidth: 240 },
+    // Grid
+    grid:               { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+    itemCard:           { width: '47%', backgroundColor: C.bgCard, borderRadius: RADIUS.lg, padding: 14, ...SHADOW.card },
+    itemTop:            { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+    itemEmoji:          { fontSize: 28 },
+    itemCover:          { width: 48, height: 64, borderRadius: RADIUS.sm, backgroundColor: C.border },
+    deleteBtn:          { padding: 4 },
+    deleteBtnText:      { fontSize: 18, color: C.textFaint, lineHeight: 20 },
+    itemTitle:          { fontSize: 14, fontWeight: '600', color: C.text, marginBottom: 4, lineHeight: 20 },
+    itemCategory:       { fontSize: 12, color: C.textMuted, marginBottom: 6 },
+    itemNotes:          { fontSize: 12, color: C.textMuted, lineHeight: 18, marginBottom: 8 },
+    statusBtn:          { marginTop: 'auto', paddingTop: 8, borderTopWidth: 1, borderTopColor: C.border },
+    statusBtnText:      { fontSize: 12, color: C.accent, fontWeight: '600' },
+    // Cover picker
+    coverPickerBtn:             { marginBottom: 16 },
+    coverPickerPreview:         { width: 80, height: 106, borderRadius: RADIUS.md },
+    coverPickerPlaceholder:     { width: 80, height: 106, borderRadius: RADIUS.md, backgroundColor: C.border, alignItems: 'center', justifyContent: 'center' },
+    coverPickerPlaceholderText: { fontSize: 12, color: C.textMuted, textAlign: 'center', padding: 8 },
+    // Modal
+    modal:              { flex: 1, backgroundColor: C.bg },
+    modalHeader:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: C.border },
+    modalTitle:         { fontSize: 20, fontWeight: '700', color: C.text },
+    modalClose:         { fontSize: 18, color: C.textMuted },
+    modalBody:          { flex: 1, padding: 20 },
+    modalFooter:        { flexDirection: 'row', gap: 12, padding: 20 },
+    fieldLabel:         { fontSize: 11, fontWeight: '700', color: C.textMuted, letterSpacing: 0.8, marginBottom: 8 },
+    fieldInput:         { backgroundColor: C.bgCard, borderRadius: RADIUS.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: C.text, borderWidth: 1, borderColor: C.border },
+    fieldInputMulti:    { minHeight: 100, textAlignVertical: 'top' },
+    categoryGrid:       { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    catChip:            { paddingHorizontal: 12, paddingVertical: 8, borderRadius: RADIUS.xl, borderWidth: 1, borderColor: C.border, backgroundColor: C.bgCard },
+    catChipActive:      { borderColor: C.accent, backgroundColor: C.accentLight },
+    catChipText:        { fontSize: 13, color: C.textMuted },
+    catChipTextActive:  { color: C.accent, fontWeight: '600' },
+    cancelBtn:          { flex: 1, padding: 14, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border, alignItems: 'center' },
+    cancelBtnText:      { fontSize: 15, color: C.textMuted, fontWeight: '500' },
+    confirmBtn:         { flex: 1, padding: 14, borderRadius: RADIUS.md, backgroundColor: C.accent, alignItems: 'center' },
+    confirmBtnText:     { fontSize: 15, color: '#fff', fontWeight: '600' },
+  });
+}

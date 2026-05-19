@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
   StyleSheet, Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useApp } from '../AppContext';
+import { useApp, useTheme } from '../AppContext';
 import { generateId } from '../storage';
-import { COLORS, RADIUS, SHADOW } from '../theme';
+import { RADIUS, SHADOW } from '../theme';
 
 const QUOTES = [
   { text: 'The secret of getting ahead is getting started.', author: 'Mark Twain' },
@@ -29,8 +29,11 @@ function formatDate() {
 
 export default function HomeScreen({ navigation }) {
   const { state, setState } = useApp();
+  const C = useTheme();
   const [focusInput, setFocusInput] = useState('');
   const quote = QUOTES[new Date().getDate() % QUOTES.length];
+
+  const styles = useMemo(() => makeStyles(C), [C]);
 
   const openTodos = (state.workLists || [])
     .filter((l) => !state.weekendMode || !l.isWork)
@@ -65,7 +68,7 @@ export default function HomeScreen({ navigation }) {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
@@ -98,7 +101,7 @@ export default function HomeScreen({ navigation }) {
                 <TextInput
                   style={styles.focusInput}
                   placeholder="Add a focus item…"
-                  placeholderTextColor={COLORS.textFaint}
+                  placeholderTextColor={C.textFaint}
                   value={focusInput}
                   onChangeText={setFocusInput}
                   onSubmitEditing={addFocusItem}
@@ -188,41 +191,43 @@ export default function HomeScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe:             { flex: 1, backgroundColor: COLORS.bg },
-  scroll:           { flex: 1 },
-  content:          { padding: 20 },
-  header:           { marginBottom: 20 },
-  greetingDate:     { fontSize: 14, color: COLORS.textMuted, marginBottom: 2 },
-  name:             { fontSize: 36, fontWeight: '700', color: COLORS.text },
-  card:             { backgroundColor: COLORS.bgCard, borderRadius: RADIUS.lg, padding: 16, ...SHADOW.card },
-  quoteCard:        { marginBottom: 24 },
-  quoteText:        { fontSize: 14, fontStyle: 'italic', color: COLORS.text, lineHeight: 22 },
-  quoteAuthor:      { fontSize: 13, color: COLORS.textMuted, marginTop: 6 },
-  section:          { marginBottom: 20 },
-  sectionHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  sectionTitle:     { fontSize: 11, fontWeight: '700', color: COLORS.textMuted, letterSpacing: 0.8, marginBottom: 8 },
-  seeAll:           { fontSize: 13, color: COLORS.accent, fontWeight: '600' },
-  empty:            { fontSize: 14, color: COLORS.textFaint },
-  // Focus items
-  focusRow:         { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, gap: 10 },
-  focusCheck:       { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center' },
-  focusCheckDone:   { backgroundColor: COLORS.sage, borderColor: COLORS.sage },
-  focusCheckMark:   { color: '#fff', fontSize: 12, fontWeight: '700' },
-  focusText:        { fontSize: 14, color: COLORS.text, flex: 1 },
-  focusTextDone:    { textDecorationLine: 'line-through', color: COLORS.textMuted },
-  focusInputRow:    { paddingTop: 8, borderTopWidth: 1, borderTopColor: COLORS.border, marginTop: 4 },
-  focusInput:       { fontSize: 14, color: COLORS.text, paddingVertical: 4 },
-  // Todos
-  todoRow:          { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  check:            { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center' },
-  checkDone:        { backgroundColor: COLORS.sage, borderColor: COLORS.sage },
-  checkMark:        { color: '#fff', fontSize: 11, fontWeight: '700' },
-  todoTextGroup:    { flex: 1 },
-  todoText:         { fontSize: 14, color: COLORS.text },
-  todoTextDone:     { textDecorationLine: 'line-through', color: COLORS.textMuted },
-  todoListName:     { fontSize: 12, color: COLORS.textMuted, marginTop: 1 },
-  // Checkin
-  checkinPreview:   { fontSize: 14, color: COLORS.text, lineHeight: 22 },
-  consumingPreview: { fontSize: 14, color: COLORS.text },
-});
+function makeStyles(C) {
+  return StyleSheet.create({
+    safe:             { flex: 1, backgroundColor: C.bg },
+    scroll:           { flex: 1 },
+    content:          { padding: 20 },
+    header:           { marginBottom: 20 },
+    greetingDate:     { fontSize: 14, color: C.textMuted, marginBottom: 2 },
+    name:             { fontSize: 36, fontWeight: '700', color: C.text },
+    card:             { backgroundColor: C.bgCard, borderRadius: RADIUS.lg, padding: 16, ...SHADOW.card },
+    quoteCard:        { marginBottom: 24 },
+    quoteText:        { fontSize: 14, fontStyle: 'italic', color: C.text, lineHeight: 22 },
+    quoteAuthor:      { fontSize: 13, color: C.textMuted, marginTop: 6 },
+    section:          { marginBottom: 20 },
+    sectionHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+    sectionTitle:     { fontSize: 11, fontWeight: '700', color: C.textMuted, letterSpacing: 0.8, marginBottom: 8 },
+    seeAll:           { fontSize: 13, color: C.accent, fontWeight: '600' },
+    empty:            { fontSize: 14, color: C.textFaint },
+    // Focus items
+    focusRow:         { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, gap: 10 },
+    focusCheck:       { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
+    focusCheckDone:   { backgroundColor: C.sage, borderColor: C.sage },
+    focusCheckMark:   { color: '#fff', fontSize: 12, fontWeight: '700' },
+    focusText:        { fontSize: 14, color: C.text, flex: 1 },
+    focusTextDone:    { textDecorationLine: 'line-through', color: C.textMuted },
+    focusInputRow:    { paddingTop: 8, borderTopWidth: 1, borderTopColor: C.border, marginTop: 4 },
+    focusInput:       { fontSize: 14, color: C.text, paddingVertical: 4 },
+    // Todos
+    todoRow:          { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 10, borderBottomWidth: 1, borderBottomColor: C.border },
+    check:            { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
+    checkDone:        { backgroundColor: C.sage, borderColor: C.sage },
+    checkMark:        { color: '#fff', fontSize: 11, fontWeight: '700' },
+    todoTextGroup:    { flex: 1 },
+    todoText:         { fontSize: 14, color: C.text },
+    todoTextDone:     { textDecorationLine: 'line-through', color: C.textMuted },
+    todoListName:     { fontSize: 12, color: C.textMuted, marginTop: 1 },
+    // Checkin
+    checkinPreview:   { fontSize: 14, color: C.text, lineHeight: 22 },
+    consumingPreview: { fontSize: 14, color: C.text },
+  });
+}

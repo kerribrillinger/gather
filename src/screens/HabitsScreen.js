@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
   Pressable, StyleSheet, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useApp } from '../AppContext';
+import { useApp, useTheme } from '../AppContext';
 import { generateId } from '../storage';
-import { COLORS, RADIUS, SHADOW } from '../theme';
+import { RADIUS, SHADOW } from '../theme';
 
 const FREQ_OPTIONS = [
   { key: 'daily',   label: 'Daily'   },
@@ -18,28 +18,42 @@ function todayKey() {
   return new Date().toDateString();
 }
 
-function getStreak(habitId, habitLog) {
+function isWeekend(date) {
+  const day = date.getDay();
+  return day === 0 || day === 6;
+}
+
+function getStreak(habitId, habitLog, frequency) {
   const log = habitLog[habitId] || {};
   let streak = 0;
   const d = new Date();
   // Walk backwards from yesterday (today may or may not be checked)
   d.setDate(d.getDate() - 1);
-  while (log[d.toDateString()]) {
+  while (streak <= 365) {
+    // Weekday habits skip weekend days — a gap over the weekend doesn't break the streak
+    if (frequency === 'weekday' && isWeekend(d)) {
+      d.setDate(d.getDate() - 1);
+      continue;
+    }
+    if (!log[d.toDateString()]) break;
     streak += 1;
     d.setDate(d.getDate() - 1);
-    if (streak > 365) break; // safety cap
   }
-  // Include today if checked
-  if (log[todayKey()]) streak += 1;
+  // Include today if checked (skip if today is a weekend and habit is weekday-only)
+  const todayIsApplicable = frequency !== 'weekday' || !isWeekend(new Date());
+  if (todayIsApplicable && log[todayKey()]) streak += 1;
   return streak;
 }
 
 export default function HabitsScreen() {
   const { state, setState } = useApp();
+  const C = useTheme();
   const [showAdd, setShowAdd] = useState(false);
   const [newName, setNewName] = useState('');
   const [newFreq, setNewFreq] = useState('daily');
   const [newEmoji, setNewEmoji] = useState('⭐');
+
+  const styles = useMemo(() => makeStyles(C), [C]);
 
   const habits = state.habits || [];
   const today = todayKey();
@@ -82,11 +96,13 @@ export default function HabitsScreen() {
     });
   }
 
-  const completedToday = habits.filter((h) => !!(state.habitLog?.[h.id]?.[today])).length;
-  const totalToday = habits.length;
+  const todayIsWeekend = isWeekend(new Date());
+  const applicableHabits = habits.filter((h) => !(h.frequency === 'weekday' && todayIsWeekend));
+  const completedToday = applicableHabits.filter((h) => !!(state.habitLog?.[h.id]?.[today])).length;
+  const totalToday = applicableHabits.length;
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.pageHeader}>
           <View>
@@ -124,11 +140,12 @@ export default function HabitsScreen() {
         ) : (
           <View style={styles.habitList}>
             {habits.map((habit) => {
+              const isWeekdayHabitOnWeekend = habit.frequency === 'weekday' && isWeekend(new Date());
               const done = !!(state.habitLog?.[habit.id]?.[today]);
-              const streak = getStreak(habit.id, state.habitLog || {});
+              const streak = getStreak(habit.id, state.habitLog || {}, habit.frequency);
               return (
-                <View key={habit.id} style={[styles.habitRow, done && styles.habitRowDone]}>
-                  <Pressable style={[styles.circle, done && styles.circleDone]} onPress={() => toggleHabit(habit.id)}>
+                <View key={habit.id} style={[styles.habitRow, done && styles.habitRowDone, isWeekdayHabitOnWeekend && styles.habitRowMuted]}>
+                  <Pressable style={[styles.circle, done && styles.circleDone]} onPress={() => !isWeekdayHabitOnWeekend && toggleHabit(habit.id)}>
                     {done && <Text style={styles.circleCheck}>✓</Text>}
                   </Pressable>
                   <View style={styles.habitInfo}>
@@ -138,7 +155,7 @@ export default function HabitsScreen() {
                     </View>
                     <Text style={styles.habitMeta}>
                       {FREQ_OPTIONS.find((f) => f.key === habit.frequency)?.label || 'Daily'}
-                      {streak > 0 ? ` · 🔥 ${streak} day${streak !== 1 ? 's' : ''}` : ''}
+                      {isWeekdayHabitOnWeekend ? ' · rest day' : streak > 0 ? ` · 🔥 ${streak} day${streak !== 1 ? 's' : ''}` : ''}
                     </Text>
                   </View>
                   <TouchableOpacity onPress={() => deleteHabit(habit.id)} style={styles.deleteBtn}>
@@ -167,7 +184,7 @@ export default function HabitsScreen() {
             <TextInput
               style={styles.fieldInput}
               placeholder="e.g. Morning walk, Read 20 min…"
-              placeholderTextColor={COLORS.textFaint}
+              placeholderTextColor={C.textFaint}
               value={newName}
               onChangeText={setNewName}
               autoFocus
@@ -213,63 +230,66 @@ export default function HabitsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe:              { flex: 1, backgroundColor: COLORS.bg },
-  scroll:            { flex: 1 },
-  content:           { padding: 20 },
-  pageHeader:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
-  pageTitle:         { fontSize: 32, fontWeight: '700', color: COLORS.text },
-  pageSubtitle:      { fontSize: 14, color: COLORS.textMuted, marginTop: 2 },
-  addHeaderBtn:      { backgroundColor: COLORS.accent, paddingHorizontal: 14, paddingVertical: 8, borderRadius: RADIUS.md, marginTop: 6 },
-  addHeaderBtnText:  { color: '#fff', fontWeight: '600', fontSize: 14 },
-  // Progress
-  progressCard:      { backgroundColor: COLORS.bgCard, borderRadius: RADIUS.lg, padding: 16, marginBottom: 20, ...SHADOW.card },
-  progressTop:       { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
-  progressLabel:     { fontSize: 13, color: COLORS.textMuted, fontWeight: '500' },
-  progressCount:     { fontSize: 13, fontWeight: '700', color: COLORS.accent },
-  progressTrack:     { height: 8, backgroundColor: COLORS.border, borderRadius: 4, overflow: 'hidden' },
-  progressFill:      { height: '100%', backgroundColor: COLORS.accent, borderRadius: 4 },
-  allDone:           { fontSize: 13, color: COLORS.sage, fontWeight: '600', marginTop: 10, textAlign: 'center' },
-  // Empty
-  emptyState:        { alignItems: 'center', paddingVertical: 60 },
-  emptyIcon:         { fontSize: 40, marginBottom: 12 },
-  emptyTitle:        { fontSize: 16, fontWeight: '600', color: COLORS.text, marginBottom: 6 },
-  emptyHint:         { fontSize: 13, color: COLORS.textMuted, textAlign: 'center', maxWidth: 240 },
-  // Habit rows
-  habitList:         { gap: 10 },
-  habitRow:          { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: COLORS.bgCard, borderRadius: RADIUS.lg, padding: 14, ...SHADOW.card },
-  habitRowDone:      { opacity: 0.75 },
-  circle:            { width: 36, height: 36, borderRadius: 18, borderWidth: 2, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  circleDone:        { backgroundColor: COLORS.sage, borderColor: COLORS.sage },
-  circleCheck:       { color: '#fff', fontSize: 14, fontWeight: '700' },
-  habitInfo:         { flex: 1 },
-  habitTitleRow:     { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 },
-  habitEmoji:        { fontSize: 18 },
-  habitName:         { fontSize: 15, fontWeight: '600', color: COLORS.text },
-  habitNameDone:     { textDecorationLine: 'line-through', color: COLORS.textMuted },
-  habitMeta:         { fontSize: 12, color: COLORS.textMuted },
-  deleteBtn:         { padding: 4 },
-  deleteBtnText:     { fontSize: 20, color: COLORS.textFaint, lineHeight: 22 },
-  // Modal
-  modal:             { flex: 1, backgroundColor: COLORS.bg },
-  modalHeader:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  modalTitle:        { fontSize: 20, fontWeight: '700', color: COLORS.text },
-  modalClose:        { fontSize: 18, color: COLORS.textMuted },
-  modalBody:         { flex: 1, padding: 20 },
-  modalFooter:       { flexDirection: 'row', gap: 12, padding: 20 },
-  fieldLabel:        { fontSize: 11, fontWeight: '700', color: COLORS.textMuted, letterSpacing: 0.8, marginBottom: 8 },
-  fieldInput:        { backgroundColor: COLORS.bgCard, borderRadius: RADIUS.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: COLORS.text, borderWidth: 1, borderColor: COLORS.border },
-  emojiGrid:         { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  emojiBtn:          { width: 46, height: 46, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.bgCard },
-  emojiBtnActive:    { borderColor: COLORS.accent, backgroundColor: COLORS.accentLight },
-  emojiText:         { fontSize: 22 },
-  freqRow:           { flexDirection: 'row', gap: 10 },
-  freqBtn:           { flex: 1, paddingVertical: 10, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center', backgroundColor: COLORS.bgCard },
-  freqBtnActive:     { borderColor: COLORS.accent, backgroundColor: COLORS.accentLight },
-  freqBtnText:       { fontSize: 13, color: COLORS.textMuted, fontWeight: '500' },
-  freqBtnTextActive: { color: COLORS.accent, fontWeight: '700' },
-  cancelBtn:         { flex: 1, padding: 14, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center' },
-  cancelBtnText:     { fontSize: 15, color: COLORS.textMuted, fontWeight: '500' },
-  confirmBtn:        { flex: 1, padding: 14, borderRadius: RADIUS.md, backgroundColor: COLORS.accent, alignItems: 'center' },
-  confirmBtnText:    { fontSize: 15, color: '#fff', fontWeight: '600' },
-});
+function makeStyles(C) {
+  return StyleSheet.create({
+    safe:              { flex: 1, backgroundColor: C.bg },
+    scroll:            { flex: 1 },
+    content:           { padding: 20 },
+    pageHeader:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
+    pageTitle:         { fontSize: 32, fontWeight: '700', color: C.text },
+    pageSubtitle:      { fontSize: 14, color: C.textMuted, marginTop: 2 },
+    addHeaderBtn:      { backgroundColor: C.accent, paddingHorizontal: 14, paddingVertical: 8, borderRadius: RADIUS.md, marginTop: 6 },
+    addHeaderBtnText:  { color: '#fff', fontWeight: '600', fontSize: 14 },
+    // Progress
+    progressCard:      { backgroundColor: C.bgCard, borderRadius: RADIUS.lg, padding: 16, marginBottom: 20, ...SHADOW.card },
+    progressTop:       { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+    progressLabel:     { fontSize: 13, color: C.textMuted, fontWeight: '500' },
+    progressCount:     { fontSize: 13, fontWeight: '700', color: C.accent },
+    progressTrack:     { height: 8, backgroundColor: C.border, borderRadius: 4, overflow: 'hidden' },
+    progressFill:      { height: '100%', backgroundColor: C.accent, borderRadius: 4 },
+    allDone:           { fontSize: 13, color: C.sage, fontWeight: '600', marginTop: 10, textAlign: 'center' },
+    // Empty
+    emptyState:        { alignItems: 'center', paddingVertical: 60 },
+    emptyIcon:         { fontSize: 40, marginBottom: 12 },
+    emptyTitle:        { fontSize: 16, fontWeight: '600', color: C.text, marginBottom: 6 },
+    emptyHint:         { fontSize: 13, color: C.textMuted, textAlign: 'center', maxWidth: 240 },
+    // Habit rows
+    habitList:         { gap: 10 },
+    habitRow:          { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.bgCard, borderRadius: RADIUS.lg, padding: 14, ...SHADOW.card },
+    habitRowDone:      { opacity: 0.75 },
+    habitRowMuted:     { opacity: 0.45 },
+    circle:            { width: 36, height: 36, borderRadius: 18, borderWidth: 2, borderColor: C.border, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+    circleDone:        { backgroundColor: C.sage, borderColor: C.sage },
+    circleCheck:       { color: '#fff', fontSize: 14, fontWeight: '700' },
+    habitInfo:         { flex: 1 },
+    habitTitleRow:     { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 },
+    habitEmoji:        { fontSize: 18 },
+    habitName:         { fontSize: 15, fontWeight: '600', color: C.text },
+    habitNameDone:     { textDecorationLine: 'line-through', color: C.textMuted },
+    habitMeta:         { fontSize: 12, color: C.textMuted },
+    deleteBtn:         { padding: 4 },
+    deleteBtnText:     { fontSize: 20, color: C.textFaint, lineHeight: 22 },
+    // Modal
+    modal:             { flex: 1, backgroundColor: C.bg },
+    modalHeader:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: C.border },
+    modalTitle:        { fontSize: 20, fontWeight: '700', color: C.text },
+    modalClose:        { fontSize: 18, color: C.textMuted },
+    modalBody:         { flex: 1, padding: 20 },
+    modalFooter:       { flexDirection: 'row', gap: 12, padding: 20 },
+    fieldLabel:        { fontSize: 11, fontWeight: '700', color: C.textMuted, letterSpacing: 0.8, marginBottom: 8 },
+    fieldInput:        { backgroundColor: C.bgCard, borderRadius: RADIUS.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: C.text, borderWidth: 1, borderColor: C.border },
+    emojiGrid:         { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    emojiBtn:          { width: 46, height: 46, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bgCard },
+    emojiBtnActive:    { borderColor: C.accent, backgroundColor: C.accentLight },
+    emojiText:         { fontSize: 22 },
+    freqRow:           { flexDirection: 'row', gap: 10 },
+    freqBtn:           { flex: 1, paddingVertical: 10, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border, alignItems: 'center', backgroundColor: C.bgCard },
+    freqBtnActive:     { borderColor: C.accent, backgroundColor: C.accentLight },
+    freqBtnText:       { fontSize: 13, color: C.textMuted, fontWeight: '500' },
+    freqBtnTextActive: { color: C.accent, fontWeight: '700' },
+    cancelBtn:         { flex: 1, padding: 14, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border, alignItems: 'center' },
+    cancelBtnText:     { fontSize: 15, color: C.textMuted, fontWeight: '500' },
+    confirmBtn:        { flex: 1, padding: 14, borderRadius: RADIUS.md, backgroundColor: C.accent, alignItems: 'center' },
+    confirmBtnText:    { fontSize: 15, color: '#fff', fontWeight: '600' },
+  });
+}

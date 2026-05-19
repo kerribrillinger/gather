@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
   Switch, StyleSheet, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useApp } from '../AppContext';
-import { COLORS, RADIUS, SHADOW } from '../theme';
+import { useApp, useTheme } from '../AppContext';
+import { RADIUS, SHADOW } from '../theme';
 
 const SECTION_LABELS = {
   work:      { label: 'On Your Plate',      hint: 'Tasks section on home & nav' },
@@ -16,7 +16,10 @@ const SECTION_LABELS = {
 
 export default function SettingsScreen() {
   const { state, setState } = useApp();
+  const C = useTheme();
   const [nameInput, setNameInput] = useState(state.userName || '');
+
+  const styles = useMemo(() => makeStyles(C), [C]);
 
   function saveName() {
     setState((s) => ({ ...s, userName: nameInput.trim() }));
@@ -67,7 +70,7 @@ export default function SettingsScreen() {
   const hiddenSections = state.hiddenSections || [];
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.pageTitle}>Settings</Text>
 
@@ -79,7 +82,7 @@ export default function SettingsScreen() {
             <TextInput
               style={styles.nameInput}
               placeholder="Enter your name…"
-              placeholderTextColor={COLORS.textFaint}
+              placeholderTextColor={C.textFaint}
               value={nameInput}
               onChangeText={setNameInput}
               returnKeyType="done"
@@ -104,7 +107,7 @@ export default function SettingsScreen() {
               <Switch
                 value={!hiddenSections.includes(key)}
                 onValueChange={() => toggleSection(key)}
-                trackColor={{ false: COLORS.border, true: COLORS.accent }}
+                trackColor={{ false: C.border, true: C.accent }}
                 thumbColor="#fff"
               />
             </View>
@@ -122,7 +125,19 @@ export default function SettingsScreen() {
             <Switch
               value={!!state.weekendMode}
               onValueChange={toggleWeekendMode}
-              trackColor={{ false: COLORS.border, true: COLORS.accent }}
+              trackColor={{ false: C.border, true: C.accent }}
+              thumbColor="#fff"
+            />
+          </View>
+          <View style={[styles.toggleRow, { borderTopWidth: 1, borderTopColor: C.border }]}>
+            <View style={styles.toggleInfo}>
+              <Text style={styles.toggleLabel}>Dark Mode</Text>
+              <Text style={styles.toggleHint}>Switch to a dark colour scheme</Text>
+            </View>
+            <Switch
+              value={state.theme === 'dark'}
+              onValueChange={(v) => setState((s) => ({ ...s, theme: v ? 'dark' : 'light' }))}
+              trackColor={{ false: C.border, true: C.accent }}
               thumbColor="#fff"
             />
           </View>
@@ -142,27 +157,29 @@ export default function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe:            { flex: 1, backgroundColor: COLORS.bg },
-  scroll:          { flex: 1 },
-  content:         { padding: 20 },
-  pageTitle:       { fontSize: 32, fontWeight: '700', color: COLORS.text, marginBottom: 24 },
-  sectionLabel:    { fontSize: 11, fontWeight: '700', color: COLORS.textMuted, letterSpacing: 0.8, marginBottom: 8 },
-  sectionHint:     { fontSize: 13, color: COLORS.textMuted, marginBottom: 12, marginTop: -4 },
-  card:            { backgroundColor: COLORS.bgCard, borderRadius: RADIUS.lg, ...SHADOW.card, overflow: 'hidden' },
-  // Profile
-  fieldLabel:      { fontSize: 13, color: COLORS.textMuted, fontWeight: '500', marginBottom: 8, padding: 16, paddingBottom: 0 },
-  nameRow:         { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16, paddingTop: 8 },
-  nameInput:       { flex: 1, backgroundColor: COLORS.bg, borderRadius: RADIUS.md, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: COLORS.text, borderWidth: 1, borderColor: COLORS.border },
-  saveBtn:         { backgroundColor: COLORS.accent, paddingHorizontal: 14, paddingVertical: 10, borderRadius: RADIUS.md },
-  saveBtnText:     { color: '#fff', fontWeight: '600', fontSize: 14 },
-  // Toggle rows
-  toggleRow:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14 },
-  toggleRowBorder: { borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  toggleInfo:      { flex: 1, marginRight: 12 },
-  toggleLabel:     { fontSize: 15, color: COLORS.text, fontWeight: '500' },
-  toggleHint:      { fontSize: 12, color: COLORS.textMuted, marginTop: 2 },
-  // Danger
-  dangerCard:      { borderWidth: 1, borderColor: '#FAD4D4' },
-  dangerBtn:       { fontSize: 15, color: COLORS.danger || '#C0392B', fontWeight: '500', padding: 16 },
-});
+function makeStyles(C) {
+  return StyleSheet.create({
+    safe:            { flex: 1, backgroundColor: C.bg },
+    scroll:          { flex: 1 },
+    content:         { padding: 20 },
+    pageTitle:       { fontSize: 32, fontWeight: '700', color: C.text, marginBottom: 24 },
+    sectionLabel:    { fontSize: 11, fontWeight: '700', color: C.textMuted, letterSpacing: 0.8, marginBottom: 8 },
+    sectionHint:     { fontSize: 13, color: C.textMuted, marginBottom: 12, marginTop: -4 },
+    card:            { backgroundColor: C.bgCard, borderRadius: RADIUS.lg, ...SHADOW.card, overflow: 'hidden' },
+    // Profile
+    fieldLabel:      { fontSize: 13, color: C.textMuted, fontWeight: '500', marginBottom: 8, padding: 16, paddingBottom: 0 },
+    nameRow:         { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16, paddingTop: 8 },
+    nameInput:       { flex: 1, backgroundColor: C.bg, borderRadius: RADIUS.md, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: C.text, borderWidth: 1, borderColor: C.border },
+    saveBtn:         { backgroundColor: C.accent, paddingHorizontal: 14, paddingVertical: 10, borderRadius: RADIUS.md },
+    saveBtnText:     { color: '#fff', fontWeight: '600', fontSize: 14 },
+    // Toggle rows
+    toggleRow:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14 },
+    toggleRowBorder: { borderBottomWidth: 1, borderBottomColor: C.border },
+    toggleInfo:      { flex: 1, marginRight: 12 },
+    toggleLabel:     { fontSize: 15, color: C.text, fontWeight: '500' },
+    toggleHint:      { fontSize: 12, color: C.textMuted, marginTop: 2 },
+    // Danger
+    dangerCard:      { borderWidth: 1, borderColor: '#FAD4D4' },
+    dangerBtn:       { fontSize: 15, color: C.danger, fontWeight: '500', padding: 16 },
+  });
+}
