@@ -104,22 +104,23 @@ export default function SettingsScreen() {
         <Text style={[styles.sectionLabel, { marginTop: 28 }]}>APPEARANCE</Text>
 
         <Text style={styles.subsectionLabel}>COLOUR PALETTE</Text>
-        <View style={styles.paletteRow}>
+        <View style={styles.paletteGrid}>
           {Object.entries(PALETTES).map(([key, palette]) => (
             <TouchableOpacity
               key={key}
-              style={[styles.paletteSwatch, { backgroundColor: palette.swatch }, state.palette === key && styles.paletteSwatchActive]}
+              style={[styles.paletteItem, state.palette === key && styles.paletteItemActive]}
               onPress={() => setState((s) => ({ ...s, palette: key }))}
             >
-              {state.palette === key && <Text style={styles.paletteSwatchCheck}>✓</Text>}
+              <View style={styles.paletteSwatchRow}>
+                <View style={[styles.paletteDot, { backgroundColor: palette.swatch }]} />
+                <View style={[styles.paletteDot, { backgroundColor: palette.accent }]} />
+                <View style={[styles.paletteDot, { backgroundColor: palette.accentLight }]} />
+              </View>
+              <Text style={[styles.paletteItemLabel, state.palette === key && { color: C.accent, fontWeight: '700' }]}>
+                {palette.label}
+              </Text>
+              {state.palette === key && <Text style={[styles.paletteItemCheck, { color: C.accent }]}>✓</Text>}
             </TouchableOpacity>
-          ))}
-        </View>
-        <View style={styles.paletteLabels}>
-          {Object.entries(PALETTES).map(([key, palette]) => (
-            <Text key={key} style={[styles.paletteLabel, state.palette === key && { color: C.accent, fontWeight: '700' }]}>
-              {palette.label}
-            </Text>
           ))}
         </View>
 
@@ -246,13 +247,14 @@ function makeStyles(C, F = {}) {
     toggleLabel:     { fontSize: 15, color: C.text, fontWeight: '500', fontFamily: F.body },
     toggleHint:      { fontSize: 12, color: C.textMuted, marginTop: 2 },
     // Appearance
-    subsectionLabel:     { fontSize: 11, fontWeight: '600', color: C.textMuted, letterSpacing: 0.6, marginBottom: 10 },
-    paletteRow:          { flexDirection: 'row', gap: 12, marginBottom: 6 },
-    paletteSwatch:       { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-    paletteSwatchActive: { borderWidth: 3, borderColor: C.text },
-    paletteSwatchCheck:  { color: '#fff', fontSize: 16, fontWeight: '700' },
-    paletteLabels:       { flexDirection: 'row', gap: 12, marginBottom: 4 },
-    paletteLabel:        { width: 40, fontSize: 10, color: C.textMuted, textAlign: 'center' },
+    subsectionLabel:       { fontSize: 11, fontWeight: '600', color: C.textMuted, letterSpacing: 0.6, marginBottom: 10 },
+    paletteGrid:           { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 4 },
+    paletteItem:           { flex: 0.5, backgroundColor: C.bgCard, borderRadius: RADIUS.md, padding: 12, borderWidth: 1, borderColor: C.border, alignItems: 'center' },
+    paletteItemActive:     { borderColor: C.accent, borderWidth: 2 },
+    paletteSwatchRow:      { flexDirection: 'row', gap: 4, marginBottom: 8 },
+    paletteDot:            { width: 24, height: 24, borderRadius: 12 },
+    paletteItemLabel:      { fontSize: 12, fontWeight: '500', color: C.text, textAlign: 'center' },
+    paletteItemCheck:      { fontSize: 14, fontWeight: '700', marginTop: 4 },
     fontRow:             { flexDirection: 'row', gap: 12 },
     fontBtn:             { flex: 1, backgroundColor: C.bgCard, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border, padding: 14, alignItems: 'center', ...SHADOW.card },
     fontBtnActive:       { borderColor: C.accent, backgroundColor: C.accentLight },
