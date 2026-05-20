@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
-  Pressable, StyleSheet, KeyboardAvoidingView, Platform, Modal,
+  Pressable, StyleSheet, KeyboardAvoidingView, Platform, Modal, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApp, useTheme, useFont } from '../AppContext';
@@ -67,7 +67,19 @@ export default function JournalScreen() {
   }
 
   function deleteEntry(id) {
-    setState((s) => ({ ...s, checkIns: (s.checkIns || []).filter((e) => e.id !== id) }));
+    Alert.alert(
+      'Delete entry',
+      'Are you sure you want to delete this journal entry? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: () => {
+            setState((s) => ({ ...s, checkIns: (s.checkIns || []).filter((e) => e.id !== id) }));
+          },
+        },
+      ]
+    );
   }
 
   const pastEntries = (state.checkIns || []).filter(

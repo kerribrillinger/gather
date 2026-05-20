@@ -131,13 +131,28 @@ export default function TasksScreen() {
   }
 
   function deleteTodo(id) {
-    setState((s) => ({
-      ...s,
-      workTodos: {
-        ...s.workTodos,
-        [currentList.id]: (s.workTodos[currentList.id] || []).filter((t) => t.id !== id),
-      },
-    }));
+    const todo = (state.workTodos[currentList.id] || []).find((t) => t.id === id);
+    if (!todo) return;
+    const taskText = todo.text.length > 50 ? todo.text.substring(0, 47) + '…' : todo.text;
+    Alert.alert(
+      'Delete task',
+      `"${taskText}" will be deleted. This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: () => {
+            setState((s) => ({
+              ...s,
+              workTodos: {
+                ...s.workTodos,
+                [currentList.id]: (s.workTodos[currentList.id] || []).filter((t) => t.id !== id),
+              },
+            }));
+          },
+        },
+      ]
+    );
   }
 
   function reorderTodos(newData) {
@@ -241,22 +256,30 @@ export default function TasksScreen() {
             const c = LIST_BADGE_COLORS[list.colorIndex ?? 0];
             const isActive = list.id === (currentList?.id);
             return (
-              <TouchableOpacity
-                key={list.id}
-                style={[styles.tab, isActive && styles.tabActive]}
-                onPress={() => setActiveListId(list.id)}
-                onLongPress={() => {
-                  setEditingList(list);
-                  setEditListName(list.name);
-                  setEditListColorIndex(list.colorIndex ?? 0);
-                  setEditListIsWork(list.isWork ?? false);
-                }}
-              >
-                <View style={[styles.tabBadge, { backgroundColor: c.bg }]}>
-                  <Text style={[styles.tabBadgeText, { color: c.text }]}>{getListBadge(list.name)}</Text>
-                </View>
-                <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{list.name}</Text>
-              </TouchableOpacity>
+              <View key={list.id} style={[styles.tab, isActive && styles.tabActive, { flexDirection: 'row', alignItems: 'center' }]}>
+                <TouchableOpacity
+                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                  onPress={() => setActiveListId(list.id)}
+                >
+                  <View style={[styles.tabBadge, { backgroundColor: c.bg }]}>
+                    <Text style={[styles.tabBadgeText, { color: c.text }]}>{getListBadge(list.name)}</Text>
+                  </View>
+                  <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{list.name}</Text>
+                </TouchableOpacity>
+                {isActive && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setEditingList(list);
+                      setEditListName(list.name);
+                      setEditListColorIndex(list.colorIndex ?? 0);
+                      setEditListIsWork(list.isWork ?? false);
+                    }}
+                    style={{ padding: 4 }}
+                  >
+                    <Text style={{ fontSize: 18, color: C.textMuted }}>⋯</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             );
           })}
           <TouchableOpacity style={styles.tabAdd} onPress={() => setShowNewList(true)}>
@@ -639,7 +662,7 @@ function makeStyles(C, F = {}) {
     todoImportant:     { borderLeftWidth: 3, borderLeftColor: C.accent },
     todoItemDragging:  { opacity: 0.9, elevation: 8, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 8 },
     dragHandle:        { paddingHorizontal: 4, paddingVertical: 8 },
-    dragHandleIcon:    { fontSize: 16, color: C.textFaint },
+    dragHandleIcon:    { fontSize: 22, color: C.text, fontWeight: '700' },
     check:             { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: C.border, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
     checkDone:         { backgroundColor: C.sage, borderColor: C.sage },
     checkMark:         { color: '#fff', fontSize: 11, fontWeight: '700' },

@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
-  Pressable, StyleSheet, Modal, FlatList, Image,
+  Pressable, StyleSheet, Modal, FlatList, Image, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -67,6 +67,7 @@ export default function HobbiesScreen() {
   const [editCoverUri, setEditCoverUri] = useState(null);
   const [editRating, setEditRating] = useState(0);
   const [editReview, setEditReview] = useState('');
+  const [statusPickerItem, setStatusPickerItem] = useState(null);
 
   const items = (state.currentlyConsuming || []).filter(
     (i) => (i.status || 'current') === activeStatus && (activeType === 'all' || i.category === activeType)
@@ -124,23 +125,35 @@ export default function HobbiesScreen() {
     setEditingItem(null);
   }
 
-  function cycleStatus(id) {
-    const order = ['current', 'backlog', 'completed'];
+  function setItemStatus(id, newStatus) {
     setState((s) => ({
       ...s,
-      currentlyConsuming: (s.currentlyConsuming || []).map((i) => {
-        if (i.id !== id) return i;
-        const next = order[(order.indexOf(i.status || 'current') + 1) % order.length];
-        return { ...i, status: next };
-      }),
+      currentlyConsuming: (s.currentlyConsuming || []).map((i) =>
+        i.id === id ? { ...i, status: newStatus } : i
+      ),
     }));
+    setStatusPickerItem(null);
   }
 
   function deleteItem(id) {
-    setState((s) => ({
-      ...s,
-      currentlyConsuming: (s.currentlyConsuming || []).filter((i) => i.id !== id),
-    }));
+    const item = (state.currentlyConsuming || []).find((i) => i.id === id);
+    if (!item) return;
+    Alert.alert(
+      'Delete hobby',
+      `Are you sure you want to delete "${item.title}"? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: () => {
+            setState((s) => ({
+              ...s,
+              currentlyConsuming: (s.currentlyConsuming || []).filter((i) => i.id !== id),
+            }));
+          },
+        },
+      ]
+    );
   }
 
   const statusCounts = STATUS_TABS.reduce((acc, tab) => {
@@ -235,9 +248,9 @@ export default function HobbiesScreen() {
                 )}
                 {!!item.review && <Text style={styles.itemReview} numberOfLines={2}>{item.review}</Text>}
                 {!!item.notes && <Text style={styles.itemNotes} numberOfLines={2}>{item.notes}</Text>}
-                <TouchableOpacity style={styles.statusBtn} onPress={(e) => { e.stopPropagation(); cycleStatus(item.id); }}>
+                <TouchableOpacity style={styles.statusBtn} onPress={(e) => { e.stopPropagation(); setStatusPickerItem(item); }}>
                   <Text style={styles.statusBtnText}>
-                    {item.status === 'current' ? '→ Backlog' : item.status === 'backlog' ? '→ Done' : '→ Current'}
+                    {item.status === 'current' ? 'Current' : item.status === 'backlog' ? 'Backlog' : 'Done'} ▼
                   </Text>
                 </TouchableOpacity>
               </TouchableOpacity>
@@ -433,6 +446,29 @@ export default function HobbiesScreen() {
             </TouchableOpacity>
           </View>
         </SafeAreaView>
+      </Modal>
+
+      {/* Status Picker Modal */}
+      <Modal visible={!!statusPickerItem} animationType="fade" transparent>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: C.bgCard, borderRadius: RADIUS.lg, padding: 20, width: '100%', maxWidth: 300 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: C.text, marginBottom: 16 }}>Move to…</Text>
+            {['current', 'backlog', 'completed'].map((status) => (
+              <TouchableOpacity
+                key={status}
+                onPress={() => statusPickerItem && setItemStatus(statusPickerItem.id, status)}
+                style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.border }}
+              >
+                <Text style={{ fontSize: 15, color: statusPickerItem?.status === status ? C.accent : C.text, fontWeight: statusPickerItem?.status === status ? '700' : '500' }}>
+                  {status === 'current' ? '🎯 Current' : status === 'backlog' ? '📋 Backlog' : '✅ Completed'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity onPress={() => setStatusPickerItem(null)} style={{ marginTop: 16, paddingVertical: 12, alignItems: 'center' }}>
+              <Text style={{ fontSize: 15, color: C.textMuted, fontWeight: '500' }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );

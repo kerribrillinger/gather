@@ -1,5 +1,6 @@
 // Global state context — mirrors how appState works on desktop
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { View, ActivityIndicator } from 'react-native';
 import { loadData, saveData } from './storage';
 import { PALETTES, FONT_OPTIONS } from './theme';
 
@@ -53,7 +54,11 @@ export function AppProvider({ children }) {
     });
   }
 
-  if (!state) return null;
+  if (!state) return (
+    <View style={{ flex: 1, backgroundColor: '#FAF7F4', alignItems: 'center', justifyContent: 'center' }}>
+      <ActivityIndicator size="large" color="#8B7355" />
+    </View>
+  );
 
   return (
     <AppContext.Provider value={{ state, setState }}>

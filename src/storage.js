@@ -21,6 +21,7 @@ const DEFAULT_STATE = {
   checkinSortOrder: 'newest',
   weekendMode: false,
   hiddenSections: [],
+  sectionOrder: ['quote', 'top3', 'work', 'checkin', 'consuming'],
   theme: 'light',
   palette: 'warm',
 };

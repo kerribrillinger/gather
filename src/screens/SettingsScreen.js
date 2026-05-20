@@ -4,6 +4,7 @@ import {
   Switch, StyleSheet, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatlist';
 import { useApp, useTheme, useFont } from '../AppContext';
 import { RADIUS, SHADOW, PALETTES, FONT_OPTIONS } from '../theme';
 
@@ -14,14 +15,34 @@ const SECTION_LABELS = {
   habits:    { label: 'Habits',             hint: 'Habits section on home & nav' },
 };
 
+const REORDERABLE_SECTIONS = [
+  { key: 'quote', label: 'Quote', emoji: '💭' },
+  { key: 'top3', label: "Today's Top 3", emoji: '🎯' },
+  { key: 'work', label: 'On Your Plate', emoji: '📋' },
+  { key: 'checkin', label: "Today's Check-in", emoji: '📝' },
+  { key: 'consuming', label: 'Currently Enjoying', emoji: '🎬' },
+];
+
 export default function SettingsScreen() {
   const { state, setState } = useApp();
   const C = useTheme();
   const [nameInput, setNameInput] = useState(state.userName || '');
   const [weatherLocationInput, setWeatherLocationInput] = useState(state.weatherLocation || '');
+  const [reorderingSections, setReorderingSections] = useState(false);
 
   const F = useFont();
   const styles = useMemo(() => makeStyles(C, F), [C, F]);
+
+  // Get current section order or use default
+  const currentSectionOrder = state.sectionOrder || ['quote', 'top3', 'work', 'checkin', 'consuming'];
+  const orderedSections = currentSectionOrder.map((key) => REORDERABLE_SECTIONS.find((s) => s.key === key)).filter(Boolean);
+
+  function reorderSections(newData) {
+    setState((s) => ({
+      ...s,
+      sectionOrder: newData.map((item) => item.key),
+    }));
+  }
 
   function saveName() {
     setState((s) => ({ ...s, userName: nameInput.trim() }));
@@ -65,6 +86,7 @@ export default function SettingsScreen() {
             checkinSortOrder: 'newest',
             weekendMode: false,
             hiddenSections: [],
+            sectionOrder: ['quote', 'top3', 'work', 'checkin', 'consuming'],
             theme: 'light',
             palette: 'warm',
           })),
@@ -182,6 +204,42 @@ export default function SettingsScreen() {
           ))}
         </View>
 
+        {/* Reorder Sections */}
+        <Text style={[styles.sectionLabel, { marginTop: 28 }]}>REORDER HOME SECTIONS</Text>
+        <Text style={styles.sectionHint}>Long-press and drag to reorder.</Text>
+        <TouchableOpacity
+          style={[styles.card, styles.reorderCard]}
+          onPress={() => setReorderingSections(!reorderingSections)}
+        >
+          <Text style={styles.reorderToggleText}>
+            {reorderingSections ? '✓ Done reordering' : '≡ Reorder sections…'}
+          </Text>
+        </TouchableOpacity>
+
+        {reorderingSections && orderedSections.length > 0 && (
+          <View style={[styles.card, { marginTop: 0 }]}>
+            <DraggableFlatList
+              data={orderedSections}
+              onDragEnd={({ data }) => reorderSections(data)}
+              keyExtractor={(item) => item.key}
+              scrollEnabled={false}
+              renderItem={({ item, drag, isActive }) => (
+                <ScaleDecorator>
+                  <TouchableOpacity
+                    style={[styles.reorderItem, isActive && styles.reorderItemActive]}
+                    onLongPress={drag}
+                    delayLongPress={100}
+                  >
+                    <Text style={styles.reorderItemEmoji}>{item.emoji}</Text>
+                    <Text style={styles.reorderItemLabel}>{item.label}</Text>
+                    <Text style={styles.reorderItemHandle}>⋮⋮</Text>
+                  </TouchableOpacity>
+                </ScaleDecorator>
+              )}
+            />
+          </View>
+        )}
+
         {/* Modes */}
         <Text style={[styles.sectionLabel, { marginTop: 28 }]}>MODES</Text>
         <View style={styles.card}>
@@ -260,8 +318,16 @@ function makeStyles(C, F = {}) {
     fontBtnActive:       { borderColor: C.accent, backgroundColor: C.accentLight },
     fontBtnSample:       { fontSize: 24, fontWeight: '700', color: C.text, marginBottom: 4 },
     fontBtnLabel:        { fontSize: 11, color: C.textMuted },
+    // Reorder sections
+    reorderCard:          { padding: 14, backgroundColor: C.bgCard, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border },
+    reorderToggleText:    { fontSize: 15, fontWeight: '500', color: C.accent },
+    reorderItem:          { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, backgroundColor: C.bgCard, borderBottomWidth: 1, borderBottomColor: C.border },
+    reorderItemActive:    { backgroundColor: C.accentLight, opacity: 0.8 },
+    reorderItemEmoji:     { fontSize: 18, marginRight: 10 },
+    reorderItemLabel:     { flex: 1, fontSize: 15, color: C.text, fontWeight: '500', fontFamily: F.body },
+    reorderItemHandle:    { fontSize: 12, color: C.textMuted, marginLeft: 8 },
     // Danger
-    dangerCard:      { borderWidth: 1, borderColor: '#FAD4D4' },
-    dangerBtn:       { fontSize: 15, color: C.danger, fontWeight: '500', padding: 16 },
+    dangerCard:           { borderWidth: 1, borderColor: '#FAD4D4' },
+    dangerBtn:            { fontSize: 15, color: C.danger, fontWeight: '500', padding: 16 },
   });
 }

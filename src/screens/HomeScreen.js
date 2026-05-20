@@ -16,6 +16,14 @@ const QUOTES = [
   { text: 'Small steps every day lead to big results.', author: '' },
 ];
 
+const SECTION_KEYS = {
+  QUOTE: 'quote',
+  TOP3: 'top3',
+  WORK: 'work',
+  CHECKIN: 'checkin',
+  CONSUMING: 'consuming',
+};
+
 const WEATHER_API_KEY = 'bd5e378503939ddaee76f12ad7a97608';
 
 function weatherCodeToEmoji(code, isDay) {
@@ -48,7 +56,10 @@ export default function HomeScreen({ navigation }) {
   const C = useTheme();
   const [focusInput, setFocusInput] = useState('');
   const [weather, setWeather] = useState(null);
+  const [weatherError, setWeatherError] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameEditValue, setNameEditValue] = useState(state.userName || '');
   const quote = QUOTES[new Date().getDate() % QUOTES.length];
 
   const F = useFont();
@@ -68,12 +79,20 @@ export default function HomeScreen({ navigation }) {
 
   useEffect(() => {
     async function fetchWeather() {
-      if (!state.weatherLocation) return;
+      if (!state.weatherLocation) {
+        setWeather(null);
+        setWeatherError(false);
+        return;
+      }
       try {
         const location = encodeURIComponent(state.weatherLocation.trim());
         const url = `https://api.openweathermap.org/data/2.5/weather?q=${location}&appid=${WEATHER_API_KEY}&units=metric`;
         const res = await fetch(url);
-        if (!res.ok) return;
+        if (!res.ok) {
+          setWeatherError(true);
+          setWeather(null);
+          return;
+        }
         const data = await res.json();
         const now = Math.floor(Date.now() / 1000);
         const isDay = now >= data.sys?.sunrise && now < data.sys?.sunset;
@@ -82,7 +101,11 @@ export default function HomeScreen({ navigation }) {
           temp: Math.round(data.main?.temp),
           description: data.weather?.[0]?.main,
         });
-      } catch (_) {}
+        setWeatherError(false);
+      } catch (_) {
+        setWeatherError(true);
+        setWeather(null);
+      }
     }
     fetchWeather();
     const interval = setInterval(fetchWeather, 30 * 60 * 1000);
@@ -98,6 +121,152 @@ export default function HomeScreen({ navigation }) {
     (e) => new Date(e.createdAt).toDateString() === new Date().toDateString()
   );
 
+  function renderQuoteSection() {
+    return (
+      <View style={[styles.card, styles.quoteCard]} key="quote">
+        <Text style={styles.quoteText}>"{quote.text}"</Text>
+        {!!quote.author && <Text style={styles.quoteAuthor}>— {quote.author}</Text>}
+      </View>
+    );
+  }
+
+  function renderTop3Section() {
+    return (
+      <View style={styles.section} key="top3">
+        <Text style={styles.sectionTitle}>TODAY'S TOP 3</Text>
+        <View style={styles.card}>
+          {(state.focusItems || []).map((item) => (
+            <View key={item.id} style={styles.focusRow}>
+              <Pressable style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }} onPress={() => toggleFocusItem(item.id)}>
+                <View style={[styles.focusCheck, item.done && styles.focusCheckDone]}>
+                  {item.done && <Text style={styles.focusCheckMark}>✓</Text>}
+                </View>
+                <Text style={[styles.focusText, item.done && styles.focusTextDone]}>{item.text}</Text>
+              </Pressable>
+              <TouchableOpacity onPress={() => deleteFocusItem(item.id)} style={{ padding: 4 }}>
+                <Text style={{ fontSize: 16, color: C.textFaint }}>×</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+          {(state.focusItems || []).length < 3 && (
+            <View style={styles.focusInputRow}>
+              <TextInput
+                style={styles.focusInput}
+                placeholder="Add a focus item…"
+                placeholderTextColor={C.textFaint}
+                value={focusInput}
+                onChangeText={setFocusInput}
+                onSubmitEditing={addFocusItem}
+                returnKeyType="done"
+              />
+            </View>
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  function renderWorkSection() {
+    if ((state.hiddenSections || []).includes('work')) return null;
+    return (
+      <View style={styles.section} key="work">
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>ON YOUR PLATE</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Tasks')}>
+            <Text style={styles.seeAll}>See all</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.card}>
+          {openTodos.length === 0 ? (
+            <Text style={styles.empty}>All clear — nothing on your plate.</Text>
+          ) : (
+            openTodos.map((t) => (
+              <Pressable key={t.id} style={styles.todoRow} onPress={() => toggleTodo(t.listId, t.id)}>
+                <View style={[styles.check, t.completed && styles.checkDone]}>
+                  {t.completed && <Text style={styles.checkMark}>✓</Text>}
+                </View>
+                <View style={styles.todoTextGroup}>
+                  <Text style={[styles.todoText, t.completed && styles.todoTextDone]}>{t.text}</Text>
+                  <Text style={styles.todoListName}>{t.listName}</Text>
+                </View>
+              </Pressable>
+            ))
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  function renderCheckinSection() {
+    if ((state.hiddenSections || []).includes('checkin')) return null;
+    return (
+      <View style={styles.section} key="checkin">
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>TODAY'S CHECK-IN</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Journal')}>
+            <Text style={styles.seeAll}>{todayCheckin ? 'View' : 'Write one'}</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.card}>
+          {todayCheckin ? (
+            <Text style={styles.checkinPreview} numberOfLines={3}>{todayCheckin.body}</Text>
+          ) : (
+            <Text style={styles.empty}>No check-in yet today.</Text>
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  function renderConsumingSection() {
+    if ((state.hiddenSections || []).includes('consuming')) return null;
+    return (
+      <View style={styles.section} key="consuming">
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>CURRENTLY ENJOYING</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Hobbies')}>
+            <Text style={styles.seeAll}>See all</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.card}>
+          {(state.currentlyConsuming || []).filter((i) => (i.status || 'current') === 'current').length === 0 ? (
+            <Text style={styles.empty}>Nothing added yet.</Text>
+          ) : (
+            <Text style={styles.consumingPreview}>
+              {(state.currentlyConsuming || [])
+                .filter((i) => (i.status || 'current') === 'current')
+                .slice(0, 3)
+                .map((i) => i.title)
+                .join(' · ')}
+            </Text>
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  const sectionRenderers = {
+    [SECTION_KEYS.QUOTE]: renderQuoteSection,
+    [SECTION_KEYS.TOP3]: renderTop3Section,
+    [SECTION_KEYS.WORK]: renderWorkSection,
+    [SECTION_KEYS.CHECKIN]: renderCheckinSection,
+    [SECTION_KEYS.CONSUMING]: renderConsumingSection,
+  };
+
+  function handleNameEdit() {
+    const trimmed = nameEditValue.trim();
+    if (trimmed) {
+      setState((s) => ({ ...s, userName: trimmed }));
+    }
+    setEditingName(false);
+    setNameEditValue(state.userName || '');
+  }
+
+  function handleCancelNameEdit() {
+    setEditingName(false);
+    setNameEditValue(state.userName || '');
+  }
+
   function addFocusItem() {
     const text = focusInput.trim();
     if (!text || (state.focusItems || []).length >= 3) return;
@@ -109,6 +278,13 @@ export default function HomeScreen({ navigation }) {
     setState((s) => ({
       ...s,
       focusItems: (s.focusItems || []).map((f) => f.id === id ? { ...f, done: !f.done } : f),
+    }));
+  }
+
+  function deleteFocusItem(id) {
+    setState((s) => ({
+      ...s,
+      focusItems: (s.focusItems || []).filter((f) => f.id !== id),
     }));
   }
 
@@ -128,12 +304,40 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
             <Text style={styles.greetingDate}>{greeting()}, {formatDate()}</Text>
-            <Text style={styles.name}>{state.userName || 'There'}</Text>
+            {editingName ? (
+              <View style={styles.nameEditRow}>
+                <TextInput
+                  style={styles.nameEditInput}
+                  placeholder="Your name…"
+                  placeholderTextColor={C.textFaint}
+                  value={nameEditValue}
+                  onChangeText={setNameEditValue}
+                  autoFocus
+                  returnKeyType="done"
+                  onSubmitEditing={handleNameEdit}
+                />
+                <TouchableOpacity style={styles.nameEditSave} onPress={handleNameEdit}>
+                  <Text style={styles.nameEditBtnText}>✓</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.nameEditCancel} onPress={handleCancelNameEdit}>
+                  <Text style={styles.nameEditBtnText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity onPress={() => setEditingName(true)}>
+                <Text style={styles.name}>{state.userName || 'There'}</Text>
+              </TouchableOpacity>
+            )}
           </View>
           {weather && (
             <View style={styles.weatherBadge}>
               <Text style={styles.weatherEmoji}>{weather.emoji}</Text>
               <Text style={styles.weatherTemp}>{weather.temp}°</Text>
+            </View>
+          )}
+          {weatherError && (
+            <View style={styles.weatherBadge}>
+              <Text style={{ fontSize: 18, color: C.danger }}>⚠️</Text>
             </View>
           )}
         </View>
@@ -159,112 +363,11 @@ export default function HomeScreen({ navigation }) {
           </View>
         )}
 
-        {/* Quote */}
-        <View style={[styles.card, styles.quoteCard]}>
-          <Text style={styles.quoteText}>"{quote.text}"</Text>
-          {!!quote.author && <Text style={styles.quoteAuthor}>— {quote.author}</Text>}
-        </View>
-
-        {/* Today's Top 3 */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>TODAY'S TOP 3</Text>
-          <View style={styles.card}>
-            {(state.focusItems || []).map((item) => (
-              <Pressable key={item.id} style={styles.focusRow} onPress={() => toggleFocusItem(item.id)}>
-                <View style={[styles.focusCheck, item.done && styles.focusCheckDone]}>
-                  {item.done && <Text style={styles.focusCheckMark}>✓</Text>}
-                </View>
-                <Text style={[styles.focusText, item.done && styles.focusTextDone]}>{item.text}</Text>
-              </Pressable>
-            ))}
-            {(state.focusItems || []).length < 3 && (
-              <View style={styles.focusInputRow}>
-                <TextInput
-                  style={styles.focusInput}
-                  placeholder="Add a focus item…"
-                  placeholderTextColor={C.textFaint}
-                  value={focusInput}
-                  onChangeText={setFocusInput}
-                  onSubmitEditing={addFocusItem}
-                  returnKeyType="done"
-                />
-              </View>
-            )}
-          </View>
-        </View>
-
-        {/* On Your Plate */}
-        {!(state.hiddenSections || []).includes('work') && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>ON YOUR PLATE</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Tasks')}>
-                <Text style={styles.seeAll}>See all</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.card}>
-              {openTodos.length === 0 ? (
-                <Text style={styles.empty}>All clear — nothing on your plate.</Text>
-              ) : (
-                openTodos.map((t) => (
-                  <Pressable key={t.id} style={styles.todoRow} onPress={() => toggleTodo(t.listId, t.id)}>
-                    <View style={[styles.check, t.completed && styles.checkDone]}>
-                      {t.completed && <Text style={styles.checkMark}>✓</Text>}
-                    </View>
-                    <View style={styles.todoTextGroup}>
-                      <Text style={[styles.todoText, t.completed && styles.todoTextDone]}>{t.text}</Text>
-                      <Text style={styles.todoListName}>{t.listName}</Text>
-                    </View>
-                  </Pressable>
-                ))
-              )}
-            </View>
-          </View>
-        )}
-
-        {/* Today's Check-in */}
-        {!(state.hiddenSections || []).includes('checkin') && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>TODAY'S CHECK-IN</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Journal')}>
-                <Text style={styles.seeAll}>{todayCheckin ? 'View' : 'Write one'}</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.card}>
-              {todayCheckin ? (
-                <Text style={styles.checkinPreview} numberOfLines={3}>{todayCheckin.body}</Text>
-              ) : (
-                <Text style={styles.empty}>No check-in yet today.</Text>
-              )}
-            </View>
-          </View>
-        )}
-
-        {/* Currently Enjoying */}
-        {!(state.hiddenSections || []).includes('consuming') && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>CURRENTLY ENJOYING</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Hobbies')}>
-                <Text style={styles.seeAll}>See all</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.card}>
-              {(state.currentlyConsuming || []).filter((i) => (i.status || 'current') === 'current').length === 0 ? (
-                <Text style={styles.empty}>Nothing added yet.</Text>
-              ) : (
-                <Text style={styles.consumingPreview}>
-                  {(state.currentlyConsuming || [])
-                    .filter((i) => (i.status || 'current') === 'current')
-                    .slice(0, 3)
-                    .map((i) => i.title)
-                    .join(' · ')}
-                </Text>
-              )}
-            </View>
-          </View>
-        )}
+        {/* Render sections in user-defined order */}
+        {(state.sectionOrder || ['quote', 'top3', 'work', 'checkin', 'consuming']).map((sectionKey) => {
+          const renderer = sectionRenderers[sectionKey];
+          return renderer ? renderer() : null;
+        })}
 
         <View style={{ height: 32 }} />
       </ScrollView>
@@ -283,6 +386,11 @@ function makeStyles(C, F = {}) {
     weatherTemp:      { fontSize: 13, fontWeight: '700', color: C.text, marginTop: 2 },
     greetingDate:     { fontSize: 14, color: C.textMuted, marginBottom: 2 },
     name:             { fontSize: 36, fontWeight: '700', color: C.text, fontFamily: F.heading },
+    nameEditRow:      { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
+    nameEditInput:    { flex: 1, fontSize: 28, fontWeight: '700', color: C.text, fontFamily: F.heading, paddingVertical: 4 },
+    nameEditSave:     { padding: 8, alignItems: 'center', justifyContent: 'center' },
+    nameEditCancel:   { padding: 8, alignItems: 'center', justifyContent: 'center' },
+    nameEditBtnText:  { fontSize: 20, color: C.accent, fontWeight: '700' },
     card:             { backgroundColor: C.bgCard, borderRadius: RADIUS.lg, padding: 16, ...SHADOW.card },
     quoteCard:        { marginBottom: 24 },
     quoteText:        { fontSize: 14, fontStyle: 'italic', color: C.text, lineHeight: 22 },

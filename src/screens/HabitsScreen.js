@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
-  Pressable, StyleSheet, Modal,
+  Pressable, StyleSheet, Modal, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApp, useTheme, useFont } from '../AppContext';
@@ -106,11 +106,26 @@ export default function HabitsScreen() {
   }
 
   function deleteHabit(id) {
-    setState((s) => {
-      const newLog = { ...(s.habitLog || {}) };
-      delete newLog[id];
-      return { ...s, habits: (s.habits || []).filter((h) => h.id !== id), habitLog: newLog };
-    });
+    const habit = (state.habits || []).find((h) => h.id === id);
+    if (!habit) return;
+    const streak = getStreak(id, state.habitLog || {}, habit.frequency);
+    Alert.alert(
+      'Delete habit',
+      `Are you sure? This will delete "${habit.name}" and erase all ${streak} days of streak history. This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: () => {
+            setState((s) => {
+              const newLog = { ...(s.habitLog || {}) };
+              delete newLog[id];
+              return { ...s, habits: (s.habits || []).filter((h) => h.id !== id), habitLog: newLog };
+            });
+          },
+        },
+      ]
+    );
   }
 
   function saveEditHabit() {
