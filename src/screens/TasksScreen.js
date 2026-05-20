@@ -1,16 +1,49 @@
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
-  Pressable, StyleSheet, Modal,
+  Pressable, StyleSheet, Modal, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatlist';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useApp, useTheme, useFont } from '../AppContext';
 import { generateId } from '../storage';
 import { RADIUS, SHADOW, LIST_BADGE_COLORS } from '../theme';
 
 function getListBadge(name) {
   return (name || '?').charAt(0).toUpperCase();
+}
+
+function formatDueDate(isoString) {
+  if (!isoString) return null;
+  const dueDate = new Date(isoString);
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const dueDateString = dueDate.toDateString();
+  const todayString = today.toDateString();
+  const tomorrowString = tomorrow.toDateString();
+
+  const dateFormatter = new Intl.DateTimeFormat('en-AU', { month: 'short', day: 'numeric' });
+  const formattedDate = dateFormatter.format(dueDate);
+
+  if (dueDateString === todayString) return `${formattedDate} • Today`;
+  if (dueDateString === tomorrowString) return `${formattedDate} • Tomorrow`;
+  if (dueDate < today) return `${formattedDate} • Overdue`;
+  return formattedDate;
+}
+
+function getDueDateColor(isoString, C) {
+  if (!isoString) return C.textMuted;
+  const dueDate = new Date(isoString);
+  const today = new Date();
+  const dueDateString = dueDate.toDateString();
+  const todayString = today.toDateString();
+
+  if (dueDate < today && dueDateString !== todayString) return '#D32F2F'; // red
+  if (dueDateString === todayString) return '#F57C00'; // orange
+  return C.textMuted;
 }
 
 export default function TasksScreen() {
@@ -22,12 +55,20 @@ export default function TasksScreen() {
   const [activeListId, setActiveListId] = useState(null);
   const [taskInput, setTaskInput] = useState('');
   const [taskRecurrence, setTaskRecurrence] = useState('once');
+  const [taskDueDate, setTaskDueDate] = useState(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [showNewList, setShowNewList] = useState(false);
   const [newListName, setNewListName] = useState('');
   const [newListColorIndex, setNewListColorIndex] = useState(0);
   const [newListIsWork, setNewListIsWork] = useState(false);
   const [editingTodo, setEditingTodo] = useState(null);
   const [editText, setEditText] = useState('');
+  const [editTodoDueDate, setEditTodoDueDate] = useState(null);
+  const [showEditDatePicker, setShowEditDatePicker] = useState(false);
+  const [editingList, setEditingList] = useState(null);
+  const [editListName, setEditListName] = useState('');
+  const [editListColorIndex, setEditListColorIndex] = useState(0);
+  const [editListIsWork, setEditListIsWork] = useState(false);
 
   const allLists = state.workLists || [];
   const lists = state.weekendMode ? allLists.filter((l) => !l.isWork) : allLists;
@@ -46,7 +87,7 @@ export default function TasksScreen() {
     const newTodo = {
       id: generateId(), text, completed: false,
       createdAt: new Date().toISOString(), completedAt: null,
-      dueDate: null, notes: '', important: false, recurrence: taskRecurrence,
+      dueDate: taskDueDate, notes: '', important: false, recurrence: taskRecurrence,
     };
     setState((s) => ({
       ...s,
@@ -54,6 +95,7 @@ export default function TasksScreen() {
     }));
     setTaskInput('');
     setTaskRecurrence('once');
+    setTaskDueDate(null);
   }
 
   function toggleTodo(id) {
@@ -114,11 +156,12 @@ export default function TasksScreen() {
       workTodos: {
         ...s.workTodos,
         [currentList.id]: (s.workTodos[currentList.id] || []).map((t) =>
-          t.id === editingTodo.id ? { ...t, text: editText.trim() } : t
+          t.id === editingTodo.id ? { ...t, text: editText.trim(), dueDate: editTodoDueDate } : t
         ),
       },
     }));
     setEditingTodo(null);
+    setEditTodoDueDate(null);
   }
 
   function createList() {
@@ -136,6 +179,45 @@ export default function TasksScreen() {
     setNewListColorIndex(0);
     setNewListIsWork(false);
     setShowNewList(false);
+  }
+
+  function saveEditList() {
+    const name = editListName.trim();
+    if (!name || !editingList) return;
+    setState((s) => ({
+      ...s,
+      workLists: (s.workLists || []).map((l) =>
+        l.id === editingList.id
+          ? { ...l, name, colorIndex: editListColorIndex, isWork: editListIsWork }
+          : l
+      ),
+    }));
+    setEditingList(null);
+  }
+
+  function deleteList() {
+    if (!editingList) return;
+    Alert.alert(
+      'Delete list',
+      `Are you sure you want to delete "${editingList.name}"? All tasks in this list will be deleted.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: () => {
+            setState((s) => {
+              const updated = { ...s };
+              updated.workLists = (s.workLists || []).filter((l) => l.id !== editingList.id);
+              delete updated.workTodos[editingList.id];
+              delete updated.workNotes[editingList.id];
+              return updated;
+            });
+            if (activeListId === editingList.id) setActiveListId(null);
+            setEditingList(null);
+          },
+        },
+      ]
+    );
   }
 
   const color = currentList ? LIST_BADGE_COLORS[currentList.colorIndex ?? 0] : LIST_BADGE_COLORS[0];
@@ -159,7 +241,17 @@ export default function TasksScreen() {
             const c = LIST_BADGE_COLORS[list.colorIndex ?? 0];
             const isActive = list.id === (currentList?.id);
             return (
-              <TouchableOpacity key={list.id} style={[styles.tab, isActive && styles.tabActive]} onPress={() => setActiveListId(list.id)}>
+              <TouchableOpacity
+                key={list.id}
+                style={[styles.tab, isActive && styles.tabActive]}
+                onPress={() => setActiveListId(list.id)}
+                onLongPress={() => {
+                  setEditingList(list);
+                  setEditListName(list.name);
+                  setEditListColorIndex(list.colorIndex ?? 0);
+                  setEditListIsWork(list.isWork ?? false);
+                }}
+              >
                 <View style={[styles.tabBadge, { backgroundColor: c.bg }]}>
                   <Text style={[styles.tabBadgeText, { color: c.text }]}>{getListBadge(list.name)}</Text>
                 </View>
@@ -198,10 +290,21 @@ export default function TasksScreen() {
             onSubmitEditing={addTodo}
             returnKeyType="done"
           />
+          <TouchableOpacity style={styles.dateBtn} onPress={() => setShowDatePicker(true)}>
+            <Text style={styles.dateBtnText}>📅</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.addBtn} onPress={addTodo}>
             <Text style={styles.addBtnText}>Add</Text>
           </TouchableOpacity>
         </View>
+        {taskDueDate && (
+          <View style={styles.dueDateRow}>
+            <Text style={styles.dueDateLabel}>Due: {formatDueDate(taskDueDate)}</Text>
+            <TouchableOpacity onPress={() => setTaskDueDate(null)}>
+              <Text style={styles.dueDateClear}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         <View style={styles.recurRow}>
           <Text style={styles.recurLabel}>Repeat:</Text>
           {['once', 'daily'].map((r) => (
@@ -237,9 +340,16 @@ export default function TasksScreen() {
                 <Pressable style={[styles.check, todo.completed && styles.checkDone]} onPress={() => toggleTodo(todo.id)}>
                   {todo.completed && <Text style={styles.checkMark}>✓</Text>}
                 </Pressable>
-                <Text style={[styles.todoText, todo.completed && styles.todoTextDone]} numberOfLines={2}>{todo.text}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.todoText, todo.completed && styles.todoTextDone]} numberOfLines={2}>{todo.text}</Text>
+                  {todo.dueDate && (
+                    <Text style={[styles.dueDateChip, { color: getDueDateColor(todo.dueDate, C) }]} numberOfLines={1}>
+                      {formatDueDate(todo.dueDate)}
+                    </Text>
+                  )}
+                </View>
                 {!todo.completed && (
-                  <TouchableOpacity onPress={() => { setEditingTodo(todo); setEditText(todo.text); }} style={{ padding: 4 }}>
+                  <TouchableOpacity onPress={() => { setEditingTodo(todo); setEditText(todo.text); setEditTodoDueDate(todo.dueDate); }} style={{ padding: 4 }}>
                     <Text style={{ fontSize: 14, color: C.textFaint }}>✎</Text>
                   </TouchableOpacity>
                 )}
@@ -275,19 +385,53 @@ export default function TasksScreen() {
         </View>
       )}
 
+      {/* Date Picker for New Task */}
+      {showDatePicker && (
+        <DateTimePicker
+          value={taskDueDate ? new Date(taskDueDate) : new Date()}
+          mode="date"
+          display="spinner"
+          onChange={(event, date) => {
+            if (date && event.type === 'set') {
+              setTaskDueDate(date.toISOString());
+              setShowDatePicker(false);
+            } else if (event.type === 'dismissed') {
+              setShowDatePicker(false);
+            }
+          }}
+          minimumDate={new Date()}
+        />
+      )}
+
       {/* Edit Task Modal */}
       <Modal visible={!!editingTodo} animationType="fade" transparent>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 24 }}>
           <View style={{ backgroundColor: C.bgCard, borderRadius: RADIUS.lg, padding: 20 }}>
             <Text style={{ fontSize: 16, fontWeight: '700', color: C.text, marginBottom: 12 }}>Edit Task</Text>
             <TextInput
-              style={{ backgroundColor: C.bg, borderRadius: RADIUS.md, padding: 12, fontSize: 15, color: C.text, borderWidth: 1, borderColor: C.border, marginBottom: 16 }}
+              style={{ backgroundColor: C.bg, borderRadius: RADIUS.md, padding: 12, fontSize: 15, color: C.text, borderWidth: 1, borderColor: C.border, marginBottom: 12 }}
               value={editText}
               onChangeText={setEditText}
               autoFocus
               returnKeyType="done"
               onSubmitEditing={saveEditTodo}
             />
+            {editTodoDueDate && (
+              <View style={{ backgroundColor: C.bgCard, borderRadius: RADIUS.md, padding: 12, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: C.border }}>
+                <Text style={{ fontSize: 14, color: getDueDateColor(editTodoDueDate, C), fontWeight: '500' }}>
+                  Due: {formatDueDate(editTodoDueDate)}
+                </Text>
+                <TouchableOpacity onPress={() => setEditTodoDueDate(null)}>
+                  <Text style={{ fontSize: 16, color: C.textMuted }}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            <TouchableOpacity
+              style={{ backgroundColor: C.bgCard, borderRadius: RADIUS.md, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: C.border, alignItems: 'center' }}
+              onPress={() => setShowEditDatePicker(true)}
+            >
+              <Text style={{ color: C.accent, fontWeight: '500' }}>📅 Change Due Date</Text>
+            </TouchableOpacity>
             <View style={{ flexDirection: 'row', gap: 12 }}>
               <TouchableOpacity style={{ flex: 1, padding: 12, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border, alignItems: 'center' }} onPress={() => setEditingTodo(null)}>
                 <Text style={{ color: C.textMuted, fontWeight: '500' }}>Cancel</Text>
@@ -299,6 +443,24 @@ export default function TasksScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Date Picker for Edit Task */}
+      {showEditDatePicker && (
+        <DateTimePicker
+          value={editTodoDueDate ? new Date(editTodoDueDate) : new Date()}
+          mode="date"
+          display="spinner"
+          onChange={(event, date) => {
+            if (date && event.type === 'set') {
+              setEditTodoDueDate(date.toISOString());
+              setShowEditDatePicker(false);
+            } else if (event.type === 'dismissed') {
+              setShowEditDatePicker(false);
+            }
+          }}
+          minimumDate={new Date()}
+        />
+      )}
 
       {/* New List Modal */}
       <Modal visible={showNewList} animationType="slide" presentationStyle="pageSheet">
@@ -354,6 +516,66 @@ export default function TasksScreen() {
           </View>
         </SafeAreaView>
       </Modal>
+
+      {/* Edit List Modal */}
+      <Modal visible={!!editingList} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaView style={styles.modal}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Edit List</Text>
+            <TouchableOpacity onPress={() => setEditingList(null)}>
+              <Text style={styles.modalClose}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.modalBody}>
+            <Text style={styles.fieldLabel}>LIST NAME</Text>
+            <TextInput
+              style={styles.fieldInput}
+              placeholder="e.g. Work Tasks"
+              placeholderTextColor={C.textFaint}
+              value={editListName}
+              onChangeText={setEditListName}
+              autoFocus
+            />
+            <View style={styles.workToggleRow}>
+              <View>
+                <Text style={styles.workToggleLabel}>Work list</Text>
+                <Text style={styles.workToggleHint}>Hidden during Weekend / OOO Mode</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.workToggleBtn, editListIsWork && styles.workToggleBtnActive]}
+                onPress={() => setEditListIsWork((v) => !v)}
+              >
+                <Text style={[styles.workToggleBtnText, editListIsWork && styles.workToggleBtnTextActive]}>
+                  {editListIsWork ? 'Work ✓' : 'Personal'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={[styles.fieldLabel, { marginTop: 20 }]}>COLOR</Text>
+            <View style={styles.colorGrid}>
+              {LIST_BADGE_COLORS.map((c, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={[styles.colorDot, { backgroundColor: c.bg }, i === editListColorIndex && styles.colorDotActive]}
+                  onPress={() => setEditListColorIndex(i)}
+                />
+              ))}
+            </View>
+          </View>
+          <View style={styles.modalFooter}>
+            <TouchableOpacity style={[styles.cancelBtn, { borderColor: '#FAD4D4' }]} onPress={deleteList}>
+              <Text style={{ fontSize: 15, color: C.danger, fontWeight: '500' }}>Delete</Text>
+            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 12, flex: 2 }}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditingList(null)}>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmBtn} onPress={saveEditList}>
+                <Text style={styles.confirmBtnText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -384,8 +606,14 @@ function makeStyles(C, F = {}) {
     // Add task
     addRow:              { flexDirection: 'row', gap: 10, marginBottom: 8 },
     addInput:            { flex: 1, backgroundColor: C.bgCard, borderRadius: RADIUS.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: C.text, borderWidth: 1, borderColor: C.border },
+    dateBtn:             { backgroundColor: C.bgCard, borderRadius: RADIUS.md, paddingHorizontal: 12, paddingVertical: 12, borderWidth: 1, borderColor: C.border, justifyContent: 'center', alignItems: 'center' },
+    dateBtnText:         { fontSize: 16 },
     addBtn:              { backgroundColor: C.accent, borderRadius: RADIUS.md, paddingHorizontal: 18, justifyContent: 'center' },
     addBtnText:          { color: '#fff', fontWeight: '600', fontSize: 15 },
+    dueDateRow:          { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 12, paddingHorizontal: 4 },
+    dueDateLabel:        { fontSize: 12, color: C.accent, fontWeight: '500', flex: 1 },
+    dueDateClear:        { fontSize: 16, color: C.textMuted },
+    dueDateChip:         { fontSize: 11, fontWeight: '500', marginTop: 4 },
     recurRow:            { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
     recurLabel:          { fontSize: 12, color: C.textMuted, fontWeight: '500' },
     recurBtn:            { paddingHorizontal: 12, paddingVertical: 5, borderRadius: RADIUS.xl, borderWidth: 1, borderColor: C.border, backgroundColor: C.bgCard },

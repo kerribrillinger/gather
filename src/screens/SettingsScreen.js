@@ -18,12 +18,17 @@ export default function SettingsScreen() {
   const { state, setState } = useApp();
   const C = useTheme();
   const [nameInput, setNameInput] = useState(state.userName || '');
+  const [weatherLocationInput, setWeatherLocationInput] = useState(state.weatherLocation || '');
 
   const F = useFont();
   const styles = useMemo(() => makeStyles(C, F), [C, F]);
 
   function saveName() {
     setState((s) => ({ ...s, userName: nameInput.trim() }));
+  }
+
+  function saveWeatherLocation() {
+    setState((s) => ({ ...s, weatherLocation: weatherLocationInput.trim() }));
   }
 
   function toggleSection(key) {
@@ -134,6 +139,26 @@ export default function SettingsScreen() {
               </Text>
             </TouchableOpacity>
           ))}
+        </View>
+
+        {/* Location */}
+        <Text style={[styles.sectionLabel, { marginTop: 28 }]}>LOCATION</Text>
+        <View style={styles.card}>
+          <Text style={styles.fieldLabel}>Weather location</Text>
+          <View style={styles.nameRow}>
+            <TextInput
+              style={styles.nameInput}
+              placeholder="Enter your city…"
+              placeholderTextColor={C.textFaint}
+              value={weatherLocationInput}
+              onChangeText={setWeatherLocationInput}
+              returnKeyType="done"
+              onSubmitEditing={saveWeatherLocation}
+            />
+            <TouchableOpacity style={styles.saveBtn} onPress={saveWeatherLocation}>
+              <Text style={styles.saveBtnText}>Save</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Sections */}

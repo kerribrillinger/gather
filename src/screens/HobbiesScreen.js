@@ -46,6 +46,15 @@ export default function HobbiesScreen() {
   const [newCategory, setNewCategory] = useState('📚 Book');
   const [newNotes, setNewNotes] = useState('');
   const [newCoverUri, setNewCoverUri] = useState(null);
+  const [newRating, setNewRating] = useState(0);
+  const [newReview, setNewReview] = useState('');
+  const [editingItem, setEditingItem] = useState(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editCategory, setEditCategory] = useState('📚 Book');
+  const [editNotes, setEditNotes] = useState('');
+  const [editCoverUri, setEditCoverUri] = useState(null);
+  const [editRating, setEditRating] = useState(0);
+  const [editReview, setEditReview] = useState('');
 
   const items = (state.currentlyConsuming || []).filter(
     (i) => (i.status || 'current') === activeStatus
@@ -61,14 +70,46 @@ export default function HobbiesScreen() {
       notes: newNotes.trim(),
       status: 'current',
       coverUri: newCoverUri,
+      rating: newRating,
+      review: newReview.trim(),
       createdAt: new Date().toISOString(),
     };
     setState((s) => ({ ...s, currentlyConsuming: [entry, ...(s.currentlyConsuming || [])] }));
+    resetAddForm();
+    setShowAdd(false);
+  }
+
+  function resetAddForm() {
     setNewTitle('');
     setNewNotes('');
     setNewCategory('📚 Book');
     setNewCoverUri(null);
-    setShowAdd(false);
+    setNewRating(0);
+    setNewReview('');
+  }
+
+  function openEditItem(item) {
+    setEditingItem(item);
+    setEditTitle(item.title);
+    setEditCategory(item.category);
+    setEditNotes(item.notes || '');
+    setEditCoverUri(item.coverUri || null);
+    setEditRating(item.rating || 0);
+    setEditReview(item.review || '');
+  }
+
+  function saveEditItem() {
+    const title = editTitle.trim();
+    if (!title || !editingItem) return;
+    setState((s) => ({
+      ...s,
+      currentlyConsuming: (s.currentlyConsuming || []).map((i) =>
+        i.id === editingItem.id
+          ? { ...i, title, category: editCategory, notes: editNotes.trim(), coverUri: editCoverUri, rating: editRating, review: editReview.trim() }
+          : i
+      ),
+    }));
+    setEditingItem(null);
   }
 
   function cycleStatus(id) {
@@ -146,26 +187,32 @@ export default function HobbiesScreen() {
         ) : (
           <View style={styles.grid}>
             {items.map((item) => (
-              <View key={item.id} style={styles.itemCard}>
+              <TouchableOpacity key={item.id} style={styles.itemCard} onPress={() => openEditItem(item)} activeOpacity={0.7}>
                 <View style={styles.itemTop}>
                   {item.coverUri ? (
                     <Image source={{ uri: item.coverUri }} style={styles.itemCover} />
                   ) : (
                     <Text style={styles.itemEmoji}>{categoryEmoji(item.category)}</Text>
                   )}
-                  <TouchableOpacity onPress={() => deleteItem(item.id)} style={styles.deleteBtn}>
+                  <TouchableOpacity onPress={(e) => { e.stopPropagation(); deleteItem(item.id); }} style={styles.deleteBtn}>
                     <Text style={styles.deleteBtnText}>×</Text>
                   </TouchableOpacity>
                 </View>
                 <Text style={styles.itemTitle} numberOfLines={2}>{item.title}</Text>
                 <Text style={styles.itemCategory}>{item.category}</Text>
+                {item.rating > 0 && (
+                  <Text style={styles.itemRating}>
+                    {Array.from({ length: 5 }, (_, i) => i < item.rating ? '★' : '☆').join('')}
+                  </Text>
+                )}
+                {!!item.review && <Text style={styles.itemReview} numberOfLines={2}>{item.review}</Text>}
                 {!!item.notes && <Text style={styles.itemNotes} numberOfLines={2}>{item.notes}</Text>}
-                <TouchableOpacity style={styles.statusBtn} onPress={() => cycleStatus(item.id)}>
+                <TouchableOpacity style={styles.statusBtn} onPress={(e) => { e.stopPropagation(); cycleStatus(item.id); }}>
                   <Text style={styles.statusBtnText}>
                     {item.status === 'current' ? '→ Backlog' : item.status === 'backlog' ? '→ Done' : '→ Current'}
                   </Text>
                 </TouchableOpacity>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
         )}
@@ -225,6 +272,26 @@ export default function HobbiesScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+            <Text style={[styles.fieldLabel, { marginTop: 20 }]}>RATING (optional)</Text>
+            <View style={styles.ratingRow}>
+              {[1, 2, 3, 4, 5].map((star) => (
+                <TouchableOpacity key={star} onPress={() => setNewRating(newRating === star ? 0 : star)} style={{ padding: 4 }}>
+                  <Text style={[styles.ratingStarText, newRating >= star && styles.ratingStarActive]}>
+                    {newRating >= star ? '★' : '☆'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={[styles.fieldLabel, { marginTop: 20 }]}>REVIEW / THOUGHTS (optional)</Text>
+            <TextInput
+              style={[styles.fieldInput, styles.fieldInputMulti]}
+              placeholder="What did you think?"
+              placeholderTextColor={C.textFaint}
+              value={newReview}
+              onChangeText={setNewReview}
+              multiline
+              textAlignVertical="top"
+            />
             <Text style={[styles.fieldLabel, { marginTop: 20 }]}>NOTES (optional)</Text>
             <TextInput
               style={[styles.fieldInput, styles.fieldInputMulti]}
@@ -237,11 +304,104 @@ export default function HobbiesScreen() {
             />
           </ScrollView>
           <View style={styles.modalFooter}>
-            <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowAdd(false)}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={() => { setShowAdd(false); resetAddForm(); }}>
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.confirmBtn} onPress={addItem}>
               <Text style={styles.confirmBtnText}>Add item</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Edit Item Modal */}
+      <Modal visible={!!editingItem} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaView style={styles.modal}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Edit Item</Text>
+            <TouchableOpacity onPress={() => setEditingItem(null)}>
+              <Text style={styles.modalClose}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.modalBody}>
+            <Text style={styles.fieldLabel}>COVER IMAGE (optional)</Text>
+            <TouchableOpacity
+              style={styles.coverPickerBtn}
+              onPress={async () => {
+                const uri = await pickCoverImage();
+                if (uri) setEditCoverUri(uri);
+              }}
+            >
+              {editCoverUri ? (
+                <Image source={{ uri: editCoverUri }} style={styles.coverPickerPreview} />
+              ) : (
+                <View style={styles.coverPickerPlaceholder}>
+                  <Text style={styles.coverPickerPlaceholderText}>Tap to add cover</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            {editCoverUri && (
+              <TouchableOpacity onPress={() => setEditCoverUri(null)} style={{ marginBottom: 16 }}>
+                <Text style={{ fontSize: 13, color: C.textMuted }}>Remove image</Text>
+              </TouchableOpacity>
+            )}
+            <Text style={styles.fieldLabel}>TITLE</Text>
+            <TextInput
+              style={styles.fieldInput}
+              placeholder="e.g. Dune, The Bear, Hollow Knight…"
+              placeholderTextColor={C.textFaint}
+              value={editTitle}
+              onChangeText={setEditTitle}
+            />
+            <Text style={[styles.fieldLabel, { marginTop: 20 }]}>CATEGORY</Text>
+            <View style={styles.categoryGrid}>
+              {CATEGORY_OPTIONS.map((cat) => (
+                <TouchableOpacity
+                  key={cat}
+                  style={[styles.catChip, editCategory === cat && styles.catChipActive]}
+                  onPress={() => setEditCategory(cat)}
+                >
+                  <Text style={[styles.catChipText, editCategory === cat && styles.catChipTextActive]}>{cat}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={[styles.fieldLabel, { marginTop: 20 }]}>RATING (optional)</Text>
+            <View style={styles.ratingRow}>
+              {[1, 2, 3, 4, 5].map((star) => (
+                <TouchableOpacity key={star} onPress={() => setEditRating(editRating === star ? 0 : star)} style={{ padding: 4 }}>
+                  <Text style={[styles.ratingStarText, editRating >= star && styles.ratingStarActive]}>
+                    {editRating >= star ? '★' : '☆'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={[styles.fieldLabel, { marginTop: 20 }]}>REVIEW / THOUGHTS (optional)</Text>
+            <TextInput
+              style={[styles.fieldInput, styles.fieldInputMulti]}
+              placeholder="What did you think?"
+              placeholderTextColor={C.textFaint}
+              value={editReview}
+              onChangeText={setEditReview}
+              multiline
+              textAlignVertical="top"
+            />
+            <Text style={[styles.fieldLabel, { marginTop: 20 }]}>NOTES (optional)</Text>
+            <TextInput
+              style={[styles.fieldInput, styles.fieldInputMulti]}
+              placeholder="Any thoughts, progress, etc…"
+              placeholderTextColor={C.textFaint}
+              value={editNotes}
+              onChangeText={setEditNotes}
+              multiline
+              textAlignVertical="top"
+            />
+          </ScrollView>
+          <View style={styles.modalFooter}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditingItem(null)}>
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.confirmBtn} onPress={saveEditItem}>
+              <Text style={styles.confirmBtnText}>Save</Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -285,6 +445,8 @@ function makeStyles(C, F = {}) {
     deleteBtnText:      { fontSize: 18, color: C.textFaint, lineHeight: 20 },
     itemTitle:          { fontSize: 14, fontWeight: '600', color: C.text, marginBottom: 4, lineHeight: 20, fontFamily: F.body },
     itemCategory:       { fontSize: 12, color: C.textMuted, marginBottom: 6 },
+    itemRating:         { fontSize: 13, color: C.accent, fontWeight: '600', marginBottom: 4 },
+    itemReview:         { fontSize: 11, color: C.textMuted, lineHeight: 16, marginBottom: 4, fontStyle: 'italic' },
     itemNotes:          { fontSize: 12, color: C.textMuted, lineHeight: 18, marginBottom: 8 },
     statusBtn:          { marginTop: 'auto', paddingTop: 8, borderTopWidth: 1, borderTopColor: C.border },
     statusBtnText:      { fontSize: 12, color: C.accent, fontWeight: '600' },
@@ -308,6 +470,9 @@ function makeStyles(C, F = {}) {
     catChipActive:      { borderColor: C.accent, backgroundColor: C.accentLight },
     catChipText:        { fontSize: 13, color: C.textMuted },
     catChipTextActive:  { color: C.accent, fontWeight: '600' },
+    ratingRow:          { flexDirection: 'row', gap: 4, marginBottom: 16 },
+    ratingStarText:     { fontSize: 28, color: C.border },
+    ratingStarActive:   { color: C.accent },
     cancelBtn:          { flex: 1, padding: 14, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border, alignItems: 'center' },
     cancelBtnText:      { fontSize: 15, color: C.textMuted, fontWeight: '500' },
     confirmBtn:         { flex: 1, padding: 14, borderRadius: RADIUS.md, backgroundColor: C.accent, alignItems: 'center' },
