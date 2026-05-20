@@ -14,6 +14,17 @@ const FREQ_OPTIONS = [
   { key: 'weekly',  label: 'Weekly'  },
 ];
 
+const EMOJI_CATEGORIES = {
+  'Wellness':  ['🧘', '🏃', '💪', '🚴', '⛹️', '🏊', '🧗', '🤸'],
+  'Nutrition': ['🥗', '🥕', '🍎', '🥤', '🍵', '☕', '🥛', '🍚'],
+  'Sleep':     ['😴', '🛏️', '🌙', '💤', '🌛', '🛌', '😇', '✨'],
+  'Learning':  ['📚', '📖', '✏️', '📝', '💭', '🧠', '🎓', '📺'],
+  'Creativity': ['🎨', '🎭', '🎬', '🎵', '🎸', '✒️', '🖌️', '📸'],
+  'Social':    ['👥', '💬', '☎️', '📞', '🤝', '💌', '🎉', '🤗'],
+  'Work':      ['💼', '💻', '⏰', '📊', '🎯', '📋', '🔥', '💡'],
+  'Fun':       ['⭐', '🎮', '🎲', '🎯', '🏆', '🎊', '🎁', '😄'],
+};
+
 function todayKey() {
   return new Date().toDateString();
 }
@@ -56,6 +67,7 @@ export default function HabitsScreen() {
   const [editName, setEditName] = useState('');
   const [editFreq, setEditFreq] = useState('daily');
   const [editEmoji, setEditEmoji] = useState('⭐');
+  const [showEmojiPicker, setShowEmojiPicker] = useState(null); // 'add' or 'edit'
 
   const F = useFont();
   const styles = useMemo(() => makeStyles(C, F), [C, F]);
@@ -211,17 +223,10 @@ export default function HabitsScreen() {
               autoFocus
             />
             <Text style={[styles.fieldLabel, { marginTop: 20 }]}>EMOJI</Text>
-            <View style={styles.emojiGrid}>
-              {['⭐','💪','📚','🏃','🧘','💧','🥗','😴','✏️','🎯','🌿','🎵'].map((e) => (
-                <TouchableOpacity
-                  key={e}
-                  style={[styles.emojiBtn, editEmoji === e && styles.emojiBtnActive]}
-                  onPress={() => setEditEmoji(e)}
-                >
-                  <Text style={styles.emojiText}>{e}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <TouchableOpacity style={styles.emojiPickerBtn} onPress={() => setShowEmojiPicker('edit')}>
+              <Text style={styles.emojiPickerEmoji}>{editEmoji}</Text>
+              <Text style={styles.emojiPickerText}>Choose emoji →</Text>
+            </TouchableOpacity>
             <Text style={[styles.fieldLabel, { marginTop: 20 }]}>FREQUENCY</Text>
             <View style={styles.freqRow}>
               {FREQ_OPTIONS.map((f) => (
@@ -267,17 +272,10 @@ export default function HabitsScreen() {
             />
 
             <Text style={[styles.fieldLabel, { marginTop: 20 }]}>EMOJI</Text>
-            <View style={styles.emojiGrid}>
-              {['⭐','💪','📚','🏃','🧘','💧','🥗','😴','✏️','🎯','🌿','🎵'].map((e) => (
-                <TouchableOpacity
-                  key={e}
-                  style={[styles.emojiBtn, newEmoji === e && styles.emojiBtnActive]}
-                  onPress={() => setNewEmoji(e)}
-                >
-                  <Text style={styles.emojiText}>{e}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <TouchableOpacity style={styles.emojiPickerBtn} onPress={() => setShowEmojiPicker('add')}>
+              <Text style={styles.emojiPickerEmoji}>{newEmoji}</Text>
+              <Text style={styles.emojiPickerText}>Choose emoji →</Text>
+            </TouchableOpacity>
 
             <Text style={[styles.fieldLabel, { marginTop: 20 }]}>FREQUENCY</Text>
             <View style={styles.freqRow}>
@@ -300,6 +298,43 @@ export default function HabitsScreen() {
               <Text style={styles.confirmBtnText}>Add habit</Text>
             </TouchableOpacity>
           </View>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Emoji Picker Modal */}
+      <Modal visible={!!showEmojiPicker} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaView style={styles.modal}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Choose Emoji</Text>
+            <TouchableOpacity onPress={() => setShowEmojiPicker(null)}>
+              <Text style={styles.modalClose}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.modalBody}>
+            {Object.entries(EMOJI_CATEGORIES).map(([category, emojis]) => (
+              <View key={category} style={styles.emojiCategory}>
+                <Text style={styles.emojiCategoryLabel}>{category}</Text>
+                <View style={styles.emojiCategoryGrid}>
+                  {emojis.map((e) => (
+                    <TouchableOpacity
+                      key={e}
+                      style={styles.emojiPickerOption}
+                      onPress={() => {
+                        if (showEmojiPicker === 'add') {
+                          setNewEmoji(e);
+                        } else {
+                          setEditEmoji(e);
+                        }
+                        setShowEmojiPicker(null);
+                      }}
+                    >
+                      <Text style={styles.emojiPickerOptionText}>{e}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            ))}
+          </ScrollView>
         </SafeAreaView>
       </Modal>
     </SafeAreaView>
@@ -354,10 +389,14 @@ function makeStyles(C, F = {}) {
     modalFooter:       { flexDirection: 'row', gap: 12, padding: 20 },
     fieldLabel:        { fontSize: 11, fontWeight: '700', color: C.textMuted, letterSpacing: 0.8, marginBottom: 8 },
     fieldInput:        { backgroundColor: C.bgCard, borderRadius: RADIUS.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: C.text, borderWidth: 1, borderColor: C.border },
-    emojiGrid:         { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-    emojiBtn:          { width: 46, height: 46, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bgCard },
-    emojiBtnActive:    { borderColor: C.accent, backgroundColor: C.accentLight },
-    emojiText:         { fontSize: 22 },
+    emojiPickerBtn:           { backgroundColor: C.bgCard, borderRadius: RADIUS.md, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: C.border },
+    emojiPickerEmoji:         { fontSize: 32 },
+    emojiPickerText:          { fontSize: 14, color: C.accent, fontWeight: '500', flex: 1 },
+    emojiCategory:            { marginBottom: 20 },
+    emojiCategoryLabel:       { fontSize: 12, fontWeight: '700', color: C.textMuted, letterSpacing: 0.8, marginBottom: 8 },
+    emojiCategoryGrid:        { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    emojiPickerOption:        { width: '22%', aspectRatio: 1, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bgCard },
+    emojiPickerOptionText:    { fontSize: 32 },
     freqRow:           { flexDirection: 'row', gap: 10 },
     freqBtn:           { flex: 1, paddingVertical: 10, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border, alignItems: 'center', backgroundColor: C.bgCard },
     freqBtnActive:     { borderColor: C.accent, backgroundColor: C.accentLight },

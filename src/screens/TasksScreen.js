@@ -347,6 +347,11 @@ export default function TasksScreen() {
                       {formatDueDate(todo.dueDate)}
                     </Text>
                   )}
+                  {todo.notes && (
+                    <Text style={[styles.todoNotes, todo.completed && styles.todoNotesDone]} numberOfLines={1}>
+                      {todo.notes}
+                    </Text>
+                  )}
                 </View>
                 {!todo.completed && (
                   <TouchableOpacity onPress={() => { setEditingTodo(todo); setEditText(todo.text); setEditTodoDueDate(todo.dueDate); }} style={{ padding: 4 }}>
@@ -640,6 +645,8 @@ function makeStyles(C, F = {}) {
     checkMark:         { color: '#fff', fontSize: 11, fontWeight: '700' },
     todoText:          { flex: 1, fontSize: 15, color: C.text, fontFamily: F.body },
     todoTextDone:      { textDecorationLine: 'line-through', color: C.textMuted },
+    todoNotes:         { fontSize: 11, color: C.textMuted, marginTop: 2, fontStyle: 'italic' },
+    todoNotesDone:     { color: C.textFaint },
     star:              { fontSize: 18, color: C.border },
     starActive:        { color: C.accent },
     recurBadge:        { fontSize: 13, color: C.accent },

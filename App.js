@@ -7,6 +7,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 
 import { AppProvider, useApp, useTheme } from './src/AppContext';
+import WelcomeScreen from './src/screens/WelcomeScreen';
 import HomeScreen    from './src/screens/HomeScreen';
 import HobbiesScreen from './src/screens/HobbiesScreen';
 import JournalScreen from './src/screens/JournalScreen';
@@ -31,6 +32,16 @@ function AppNavigator() {
   const C = useTheme();
   const { state } = useApp();
   const isDark = state?.theme === 'dark';
+
+  // Show welcome screen if userName is not set
+  if (!state?.userName) {
+    return (
+      <NavigationContainer>
+        <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={C.bg} />
+        <WelcomeScreen />
+      </NavigationContainer>
+    );
+  }
 
   return (
     <NavigationContainer>

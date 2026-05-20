@@ -48,10 +48,23 @@ export default function HomeScreen({ navigation }) {
   const C = useTheme();
   const [focusInput, setFocusInput] = useState('');
   const [weather, setWeather] = useState(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
   const quote = QUOTES[new Date().getDate() % QUOTES.length];
 
   const F = useFont();
   const styles = useMemo(() => makeStyles(C, F), [C, F]);
+
+  // Calculate overdue/upcoming tasks
+  const allTodos = (state.workLists || [])
+    .filter((l) => !state.weekendMode || !l.isWork)
+    .flatMap((l) => (state.workTodos[l.id] || []).filter((t) => !t.completed && t.dueDate));
+
+  const now = new Date();
+  const fiveDaysFromNow = new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000);
+  const overdueOrUrgent = allTodos.filter((t) => new Date(t.dueDate) <= fiveDaysFromNow);
+  const overdueTodos = allTodos.filter((t) => new Date(t.dueDate) < now);
+
+  const shouldShowBanner = !bannerDismissed && (overdueTodos.length > 0 || overdueOrUrgent.length > 0);
 
   useEffect(() => {
     async function fetchWeather() {
@@ -124,6 +137,27 @@ export default function HomeScreen({ navigation }) {
             </View>
           )}
         </View>
+
+        {/* Overdue/Urgent Banner */}
+        {shouldShowBanner && (
+          <View style={styles.bannerContainer}>
+            <View style={styles.banner}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.bannerTitle}>
+                  {overdueTodos.length > 0 ? '⚠️ Tasks Overdue' : '📅 Tasks Due Soon'}
+                </Text>
+                <Text style={styles.bannerText}>
+                  {overdueTodos.length > 0
+                    ? `${overdueTodos.length} task${overdueTodos.length > 1 ? 's' : ''} overdue`
+                    : `${overdueOrUrgent.length} task${overdueOrUrgent.length > 1 ? 's' : ''} due within 5 days`}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setBannerDismissed(true)} style={styles.bannerClose}>
+                <Text style={styles.bannerCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
         {/* Quote */}
         <View style={[styles.card, styles.quoteCard]}>
@@ -253,6 +287,13 @@ function makeStyles(C, F = {}) {
     quoteCard:        { marginBottom: 24 },
     quoteText:        { fontSize: 14, fontStyle: 'italic', color: C.text, lineHeight: 22 },
     quoteAuthor:      { fontSize: 13, color: C.textMuted, marginTop: 6 },
+    // Banner
+    bannerContainer:  { marginHorizontal: -20, marginTop: 0, marginBottom: 16, paddingHorizontal: 20 },
+    banner:           { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#D32F2F', borderRadius: RADIUS.md, padding: 14, ...SHADOW.card },
+    bannerTitle:      { fontSize: 14, fontWeight: '700', color: '#fff' },
+    bannerText:       { fontSize: 12, color: 'rgba(255,255,255,0.9)', marginTop: 2 },
+    bannerClose:      { padding: 8 },
+    bannerCloseText:  { fontSize: 18, color: '#fff', fontWeight: '600' },
     section:          { marginBottom: 20 },
     sectionHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
     sectionTitle:     { fontSize: 11, fontWeight: '700', color: C.textMuted, letterSpacing: 0.8, marginBottom: 8 },

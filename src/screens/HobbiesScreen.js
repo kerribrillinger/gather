@@ -9,12 +9,23 @@ import { useApp, useTheme, useFont } from '../AppContext';
 import { generateId } from '../storage';
 import { RADIUS, SHADOW } from '../theme';
 
-const CATEGORY_OPTIONS = ['📚 Book', '🎬 Movie', '📺 Show', '🎮 Game', '🎵 Music', '🎙️ Podcast', '✏️ Other'];
+const CATEGORY_OPTIONS = ['📚 Book', '🎬 Audiobook', '📺 Show', '🎮 Game', '🎵 Music', '🎙️ Podcast', '✏️ Other'];
 
 const STATUS_TABS = [
   { key: 'current',   label: 'Current'   },
   { key: 'backlog',   label: 'Backlog'   },
   { key: 'completed', label: 'Completed' },
+];
+
+const TYPE_TABS = [
+  { key: 'all',       label: 'All', emoji: '🎯' },
+  { key: '📚 Book',   label: 'Book', emoji: '📚' },
+  { key: '🎬 Audiobook', label: 'Audiobook', emoji: '🎬' },
+  { key: '📺 Show',   label: 'Show', emoji: '📺' },
+  { key: '🎮 Game',   label: 'Game', emoji: '🎮' },
+  { key: '🎵 Music',  label: 'Music', emoji: '🎵' },
+  { key: '🎙️ Podcast', label: 'Podcast', emoji: '🎙️' },
+  { key: '✏️ Other',  label: 'Other', emoji: '✏️' },
 ];
 
 function categoryEmoji(cat) {
@@ -41,6 +52,7 @@ export default function HobbiesScreen() {
   const styles = useMemo(() => makeStyles(C, F), [C, F]);
 
   const [activeStatus, setActiveStatus] = useState('current');
+  const [activeType, setActiveType] = useState('all');
   const [showAdd, setShowAdd] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newCategory, setNewCategory] = useState('📚 Book');
@@ -57,7 +69,7 @@ export default function HobbiesScreen() {
   const [editReview, setEditReview] = useState('');
 
   const items = (state.currentlyConsuming || []).filter(
-    (i) => (i.status || 'current') === activeStatus
+    (i) => (i.status || 'current') === activeStatus && (activeType === 'all' || i.category === activeType)
   );
 
   function addItem() {
@@ -170,6 +182,22 @@ export default function HobbiesScreen() {
             </TouchableOpacity>
           ))}
         </View>
+
+        {/* Type filter tabs */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.typeTabScroll} contentContainerStyle={styles.typeTabs}>
+          {TYPE_TABS.map((tab) => (
+            <TouchableOpacity
+              key={tab.key}
+              style={[styles.typeTab, activeType === tab.key && styles.typeTabActive]}
+              onPress={() => setActiveType(tab.key)}
+            >
+              <Text style={styles.typeTabEmoji}>{tab.emoji}</Text>
+              <Text style={[styles.typeTabText, activeType === tab.key && styles.typeTabTextActive]}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
 
         {/* Items grid */}
         {items.length === 0 ? (
@@ -430,6 +458,14 @@ function makeStyles(C, F = {}) {
     tabBadgeActive:     { backgroundColor: C.accentLight },
     tabBadgeText:       { fontSize: 11, fontWeight: '700', color: C.textMuted },
     tabBadgeTextActive: { color: C.accent },
+    // Type tabs
+    typeTabScroll:      { marginHorizontal: -20, marginBottom: 16, marginTop: -8 },
+    typeTabs:           { paddingHorizontal: 20, gap: 8 },
+    typeTab:            { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: RADIUS.xl, backgroundColor: C.bgCard, borderWidth: 1, borderColor: C.border },
+    typeTabActive:      { borderColor: C.accent, backgroundColor: C.accentLight },
+    typeTabEmoji:       { fontSize: 14 },
+    typeTabText:        { fontSize: 12, color: C.textMuted, fontWeight: '500' },
+    typeTabTextActive:  { color: C.accent, fontWeight: '700' },
     // Empty state
     emptyState:         { alignItems: 'center', paddingVertical: 60 },
     emptyIcon:          { fontSize: 40, marginBottom: 12 },
