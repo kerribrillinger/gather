@@ -1,27 +1,114 @@
 // Global state context — mirrors how appState works on desktop
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { View, ActivityIndicator } from 'react-native';
-import { loadData, saveData } from './storage';
+import { View } from 'react-native';
+import Svg, { Circle } from 'react-native-svg';
+import * as Font from 'expo-font';
+import {
+  DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold, DMSans_700Bold,
+  DMSans_400Regular_Italic,
+} from '@expo-google-fonts/dm-sans';
+import { Lato_400Regular, Lato_400Regular_Italic, Lato_700Bold } from '@expo-google-fonts/lato';
+import { Raleway_400Regular, Raleway_400Regular_Italic, Raleway_500Medium, Raleway_600SemiBold, Raleway_700Bold } from '@expo-google-fonts/raleway';
+import { Merriweather_400Regular, Merriweather_400Regular_Italic, Merriweather_700Bold } from '@expo-google-fonts/merriweather';
+import { Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold, Outfit_700Bold } from '@expo-google-fonts/outfit';
+import { Nunito_400Regular, Nunito_400Regular_Italic, Nunito_500Medium, Nunito_600SemiBold, Nunito_700Bold } from '@expo-google-fonts/nunito';
+import { PlayfairDisplay_400Regular, PlayfairDisplay_400Regular_Italic, PlayfairDisplay_700Bold } from '@expo-google-fonts/playfair-display';
+import { JosefinSans_400Regular, JosefinSans_400Regular_Italic, JosefinSans_500Medium, JosefinSans_600SemiBold, JosefinSans_700Bold } from '@expo-google-fonts/josefin-sans';
+import { SourceSerif4_400Regular, SourceSerif4_400Regular_Italic, SourceSerif4_700Bold } from '@expo-google-fonts/source-serif-4';
+import { AtkinsonHyperlegible_400Regular, AtkinsonHyperlegible_400Regular_Italic, AtkinsonHyperlegible_700Bold } from '@expo-google-fonts/atkinson-hyperlegible';
+import { ComicNeue_400Regular, ComicNeue_400Regular_Italic, ComicNeue_700Bold } from '@expo-google-fonts/comic-neue';
+import { loadData, saveData, seedData, DEFAULT_STATE } from './storage';
 import { PALETTES, FONT_OPTIONS } from './theme';
 
 const AppContext = createContext(null);
 
 export function AppProvider({ children }) {
   const [state, setStateRaw] = useState(null);
+  const [fontsLoaded, setFontsLoaded] = useState(false);
   const stateRef = useRef(null);
+
+  // In-memory UI state — not persisted to storage
+  const [homeEditMode, setHomeEditMode] = useState(false);
+
+  useEffect(() => {
+    Font.loadAsync({
+      'DMSans_400Regular':          DMSans_400Regular,
+      'DMSans_500Medium':           DMSans_500Medium,
+      'DMSans_600SemiBold':         DMSans_600SemiBold,
+      'DMSans_700Bold':             DMSans_700Bold,
+      'DMSans_400Regular_Italic':   DMSans_400Regular_Italic,
+      'Lato_400Regular':                  Lato_400Regular,
+      'Lato_400Regular_Italic':           Lato_400Regular_Italic,
+      'Lato_700Bold':                     Lato_700Bold,
+      'Raleway_400Regular':               Raleway_400Regular,
+      'Raleway_400Regular_Italic':        Raleway_400Regular_Italic,
+      'Raleway_500Medium':                Raleway_500Medium,
+      'Raleway_600SemiBold':              Raleway_600SemiBold,
+      'Raleway_700Bold':                  Raleway_700Bold,
+      'Merriweather_400Regular':          Merriweather_400Regular,
+      'Merriweather_400Regular_Italic':   Merriweather_400Regular_Italic,
+      'Merriweather_700Bold':             Merriweather_700Bold,
+      'Outfit_400Regular':                Outfit_400Regular,
+      'Outfit_500Medium':                 Outfit_500Medium,
+      'Outfit_600SemiBold':               Outfit_600SemiBold,
+      'Outfit_700Bold':                   Outfit_700Bold,
+      'Nunito_400Regular':                Nunito_400Regular,
+      'Nunito_400Regular_Italic':         Nunito_400Regular_Italic,
+      'Nunito_500Medium':                 Nunito_500Medium,
+      'Nunito_600SemiBold':               Nunito_600SemiBold,
+      'Nunito_700Bold':                   Nunito_700Bold,
+      'PlayfairDisplay_400Regular':       PlayfairDisplay_400Regular,
+      'PlayfairDisplay_400Regular_Italic':PlayfairDisplay_400Regular_Italic,
+      'PlayfairDisplay_700Bold':          PlayfairDisplay_700Bold,
+      'JosefinSans_400Regular':           JosefinSans_400Regular,
+      'JosefinSans_400Regular_Italic':    JosefinSans_400Regular_Italic,
+      'JosefinSans_500Medium':            JosefinSans_500Medium,
+      'JosefinSans_600SemiBold':          JosefinSans_600SemiBold,
+      'JosefinSans_700Bold':              JosefinSans_700Bold,
+      'SourceSerif4_400Regular':                SourceSerif4_400Regular,
+      'SourceSerif4_400Regular_Italic':         SourceSerif4_400Regular_Italic,
+      'SourceSerif4_700Bold':                   SourceSerif4_700Bold,
+      'AtkinsonHyperlegible_400Regular':        AtkinsonHyperlegible_400Regular,
+      'AtkinsonHyperlegible_400Regular_Italic': AtkinsonHyperlegible_400Regular_Italic,
+      'AtkinsonHyperlegible_700Bold':           AtkinsonHyperlegible_700Bold,
+      'ComicNeue_400Regular':                   ComicNeue_400Regular,
+      'ComicNeue_400Regular_Italic':            ComicNeue_400Regular_Italic,
+      'ComicNeue_700Bold':                      ComicNeue_700Bold,
+    }).catch(() => {}).finally(() => setFontsLoaded(true));
+    // Safety timeout — never block on fonts for more than 5s
+    const t = setTimeout(() => setFontsLoaded(true), 2000);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     loadData().then((data) => {
-      // Migrations (same as desktop init())
-      if (!data.workLists || data.workLists.length === 0) {
-        data.workLists = [{ id: 'personal', name: 'Personal', colorIndex: 0, isWork: false }];
-      }
+      // Migrations
+      if (!data.workLists) data.workLists = [];
+      if (!data.workTodos || typeof data.workTodos !== 'object') data.workTodos = {};
+      if (!data.workNotes || typeof data.workNotes !== 'object') data.workNotes = {};
       data.workLists.forEach((list) => {
         if (!data.workTodos[list.id]) data.workTodos[list.id] = [];
         if (!data.workNotes[list.id]) data.workNotes[list.id] = '';
       });
       if (!data.habits)   data.habits   = [];
       if (!data.habitLog) data.habitLog = {};
+
+      // Migrate pinnedTabs default if not present
+      if (!data.pinnedTabs) {
+        data.pinnedTabs = ['Journal', 'Tasks', 'Habits'];
+      }
+
+      // Ensure all array fields are always arrays (guards against bad sync data)
+      const ARRAY_FIELDS = ['photos', 'habits', 'checkIns', 'workLists', 'currentlyConsuming',
+        'countdowns', 'quickLinks', 'focusItems', 'hobbies'];
+      for (const field of ARRAY_FIELDS) {
+        if (!Array.isArray(data[field])) data[field] = DEFAULT_STATE[field] ?? [];
+      }
+
+      // Migrate removed palettes
+      if (data.palette === 'warm') data.palette = 'default';
+      if (data.palette === 'emerald') data.palette = 'accessibleEmerald';
+      if (data.palette === 'sapphire') data.palette = 'accessibleSapphire';
 
       // Auto-purge completed todos older than 7 days
       const cutoff = new Date();
@@ -40,8 +127,19 @@ export function AppProvider({ children }) {
         data.focusDate  = todayStr;
       }
 
+      // Auto-seed sample data if user has a name but nothing added yet
+      const isEmpty = (!data.habits || data.habits.length === 0)
+        && (!data.workTodos?.personal || data.workTodos.personal.length === 0)
+        && (!data.countdowns || data.countdowns.length === 0);
+      if (data.userName && isEmpty) {
+        const seed = seedData(data.userName);
+        Object.assign(data, seed);
+      }
+
       stateRef.current = data;
       setStateRaw(data);
+    }).catch(() => {
+      setStateRaw({ ...DEFAULT_STATE });
     });
   }, []);
 
@@ -54,14 +152,19 @@ export function AppProvider({ children }) {
     });
   }
 
-  if (!state) return (
-    <View style={{ flex: 1, backgroundColor: '#FAF7F4', alignItems: 'center', justifyContent: 'center' }}>
-      <ActivityIndicator size="large" color="#8B7355" />
+  if (!state || !fontsLoaded) return (
+    <View style={{ flex: 1, backgroundColor: '#F5F0E6', alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width={80} height={80} viewBox="0 0 80 80">
+        <Circle cx={27} cy={27} r={19} fill="#EDD9A3" />
+        <Circle cx={53} cy={27} r={19} fill="#C9A84C" opacity={0.85} />
+        <Circle cx={27} cy={53} r={19} fill="#C9A84C" opacity={0.7} />
+        <Circle cx={53} cy={53} r={19} fill="#EDD9A3" opacity={0.6} />
+      </Svg>
     </View>
   );
 
   return (
-    <AppContext.Provider value={{ state, setState }}>
+    <AppContext.Provider value={{ state, setState, homeEditMode, setHomeEditMode }}>
       {children}
     </AppContext.Provider>
   );
@@ -73,9 +176,9 @@ export function useApp() {
 
 export function useTheme() {
   const ctx = useContext(AppContext);
-  const palette = ctx?.state?.palette || 'warm';
+  const palette = ctx?.state?.palette || 'default';
   const isDark = ctx?.state?.theme === 'dark';
-  const base = PALETTES[palette] || PALETTES.warm;
+  const base = PALETTES[palette] || PALETTES.default;
   return isDark ? { ...base, ...base.dark } : base;
 }
 

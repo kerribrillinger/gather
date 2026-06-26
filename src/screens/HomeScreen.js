@@ -1,43 +1,143 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
-  View, Text, ScrollView, TextInput, TouchableOpacity,
-  StyleSheet, Pressable,
+  View, Text, ScrollView, FlatList, TextInput, TouchableOpacity,
+  StyleSheet, Pressable, Image, Linking, Vibration, Dimensions, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatlist';
+import BottomSheet from '../BottomSheet';
 import { useApp, useTheme, useFont } from '../AppContext';
 import { generateId } from '../storage';
-import { RADIUS, SHADOW } from '../theme';
+import { RADIUS, SHADOW, LIST_BADGE_COLORS } from '../theme';
 
-const QUOTES = [
-  { text: 'The secret of getting ahead is getting started.', author: 'Mark Twain' },
-  { text: 'It always seems impossible until it\'s done.', author: 'Nelson Mandela' },
-  { text: 'Done is better than perfect.', author: 'Sheryl Sandberg' },
-  { text: 'Focus on being productive instead of busy.', author: 'Tim Ferriss' },
-  { text: 'Small steps every day lead to big results.', author: '' },
-];
-
-const SECTION_KEYS = {
-  QUOTE: 'quote',
-  TOP3: 'top3',
-  WORK: 'work',
-  CHECKIN: 'checkin',
-  CONSUMING: 'consuming',
+// Human-readable labels for each home card key — mirrors SettingsScreen
+const HOME_CARD_LABELS = {
+  quote:      'Daily Quote',
+  top3:       "Today's Top 3",
+  habits:     'Habits',
+  tasks:      'On Your Plate',
+  checkin:    "Today's Check-in",
+  notes:      'Notes',
+  countdowns: 'Countdowns',
+  quicklinks: 'Quick Links',
+  enjoying:   'Currently Enjoying',
+  photos:     'Photos',
 };
 
-const WEATHER_API_KEY = 'bd5e378503939ddaee76f12ad7a97608';
+const QUOTES = [
+  { text: 'You are allowed to be both a masterpiece and a work in progress simultaneously.', author: 'Sophia Bush' },
+  { text: 'She believed she could, so she did.', author: 'R.S. Grey' },
+  { text: 'Do it with passion or not at all.', author: 'Rosa Nouchette Carey' },
+  { text: 'The most courageous act is still to think for yourself. Aloud.', author: 'Coco Chanel' },
+  { text: 'Not all those who wander are lost.', author: 'J.R.R. Tolkien' },
+  { text: 'You are enough. You have enough. You do enough.', author: 'Brené Brown' },
+  { text: 'Be curious, not judgmental.', author: 'Ted Lasso' },
+  { text: 'Just keep swimming.', author: 'Dory, Finding Nemo' },
+  { text: 'Done is better than perfect.', author: 'Sheryl Sandberg' },
+  { text: 'We can do hard things.', author: 'Glennon Doyle' },
+  { text: 'Rest is not a reward. It\'s a requirement.', author: 'Unknown' },
+  { text: 'You are not a mess. You are a feeling person in a messy world.', author: 'Glennon Doyle' },
+  { text: 'What is grief, if not love persevering?', author: 'Vision, WandaVision' },
+  { text: 'I love deadlines. I love the whooshing noise they make as they go by.', author: 'Douglas Adams' },
+  { text: 'A book is a dream you hold in your hands.', author: 'Neil Gaiman' },
+  { text: 'Some days I amaze myself. Other days I put my keys in the fridge.', author: 'Unknown' },
+  { text: 'I told myself I\'d just read one more chapter… three hours ago.', author: 'Every reader, always' },
+  { text: 'My to-be-read pile is not a problem. It\'s a library of future joy.', author: 'Unknown' },
+  { text: 'Be the main character of your own life.', author: 'Unknown' },
+  { text: 'Stay close to anything that makes you glad you are alive.', author: 'Hafez' },
+];
 
+
+// Fixed accent colours — not theme-dependent
+const LIVE_RED = '#E05252';
+const WC_GREEN = '#3E8B4E';
+const DUE_COLORS = {
+  overdueBg:   'rgba(200,80,50,0.12)',
+  overdueText: '#C85032',
+  todayBg:     'rgba(200,130,50,0.12)',
+  todayText:   '#C87832',
+  tomorrowBg:  'rgba(196,154,42,0.12)',
+};
+
+const COUNTRY_FLAGS = {
+  // UEFA (Europe)
+  'Albania': '🇦🇱', 'Austria': '🇦🇹', 'Belgium': '🇧🇪', 'Croatia': '🇭🇷',
+  'Czech Republic': '🇨🇿', 'Denmark': '🇩🇰', 'England': '🏴󠁧󠁢󠁥󠁮󠁧󠁿', 'Finland': '🇫🇮',
+  'France': '🇫🇷', 'Germany': '🇩🇪', 'Greece': '🇬🇷', 'Hungary': '🇭🇺',
+  'Ireland': '🇮🇪', 'Italy': '🇮🇹', 'Netherlands': '🇳🇱', 'Norway': '🇳🇴',
+  'Poland': '🇵🇱', 'Portugal': '🇵🇹', 'Romania': '🇷🇴', 'Scotland': '🏴󠁧󠁢󠁳󠁣󠁴󠁿',
+  'Serbia': '🇷🇸', 'Slovakia': '🇸🇰', 'Slovenia': '🇸🇮', 'Spain': '🇪🇸',
+  'Sweden': '🇸🇪', 'Switzerland': '🇨🇭', 'Turkey': '🇹🇷', 'Türkiye': '🇹🇷',
+  'Ukraine': '🇺🇦', 'Wales': '🏴󠁧󠁢󠁷󠁬󠁳󠁿',
+  // CONMEBOL (South America)
+  'Argentina': '🇦🇷', 'Bolivia': '🇧🇴', 'Brazil': '🇧🇷', 'Chile': '🇨🇱',
+  'Colombia': '🇨🇴', 'Ecuador': '🇪🇨', 'Paraguay': '🇵🇾', 'Peru': '🇵🇪',
+  'Uruguay': '🇺🇾', 'Venezuela': '🇻🇪',
+  // CONCACAF (North/Central America & Caribbean)
+  'Canada': '🇨🇦', 'Costa Rica': '🇨🇷', 'Cuba': '🇨🇺', 'Curaçao': '🇨🇼',
+  'Guatemala': '🇬🇹', 'Haiti': '🇭🇹', 'Honduras': '🇭🇳', 'Jamaica': '🇯🇲',
+  'Mexico': '🇲🇽', 'Panama': '🇵🇦', 'Trinidad & Tobago': '🇹🇹',
+  'Trinidad and Tobago': '🇹🇹', 'USA': '🇺🇸', 'United States': '🇺🇸',
+  // CAF (Africa)
+  'Algeria': '🇩🇿', 'Cameroon': '🇨🇲', 'Cape Verde': '🇨🇻', 'Congo': '🇨🇩',
+  'DR Congo': '🇨🇩', 'Egypt': '🇪🇬', 'Ghana': '🇬🇭', 'Guinea': '🇬🇳',
+  'Ivory Coast': '🇨🇮', "Côte d'Ivoire": '🇨🇮', 'Mali': '🇲🇱', 'Morocco': '🇲🇦',
+  'Nigeria': '🇳🇬', 'Senegal': '🇸🇳', 'South Africa': '🇿🇦', 'Tanzania': '🇹🇿',
+  'Tunisia': '🇹🇳', 'Uganda': '🇺🇬',
+  // AFC (Asia)
+  'Australia': '🇦🇺', 'China': '🇨🇳', 'Indonesia': '🇮🇩', 'Iran': '🇮🇷',
+  'Iraq': '🇮🇶', 'Japan': '🇯🇵', 'Jordan': '🇯🇴', 'New Zealand': '🇳🇿',
+  'Oman': '🇴🇲', 'Qatar': '🇶🇦', 'Saudi Arabia': '🇸🇦', 'South Korea': '🇰🇷',
+  'Korea Republic': '🇰🇷', 'Thailand': '🇹🇭', 'United Arab Emirates': '🇦🇪',
+  'Uzbekistan': '🇺🇿',
+  // OFC / other
+  'Bosnia & Herzegovina': '🇧🇦', 'Bosnia and Herzegovina': '🇧🇦',
+  'Russia': '🇷🇺',
+};
+
+function flagFor(name) { return COUNTRY_FLAGS[name] || '🏳️'; }
+
+// Parse a match time like "19:00 UTC-7" into a local Date for a given date string
+function parseMatchTime(dateStr, timeStr) {
+  if (!timeStr) return null;
+  const m = timeStr.match(/(\d{1,2}):(\d{2})\s*UTC([+-]\d+)/);
+  if (!m) return null;
+  const [, h, min, offset] = m;
+  const utcMs = Date.UTC(
+    +dateStr.slice(0, 4), +dateStr.slice(5, 7) - 1, +dateStr.slice(8, 10),
+    +h - +offset, +min
+  );
+  return new Date(utcMs);
+}
+
+// Open-Meteo WMO weather code → emoji
 function weatherCodeToEmoji(code, isDay) {
-  if (code >= 200 && code < 300) return '⛈️';
-  if (code >= 300 && code < 400) return '🌦️';
-  if (code === 511)               return '🌨️';
-  if (code >= 500 && code < 600) return '🌧️';
-  if (code >= 600 && code < 700) return '❄️';
-  if (code >= 700 && code < 800) return '🌫️';
-  if (code === 800) return isDay ? '☀️' : '🌙';
-  if (code === 801) return isDay ? '🌤️' : '🌙';
-  if (code === 802) return '⛅';
-  if (code >= 803) return '☁️';
+  if (code === 0)                    return isDay ? '☀️' : '🌙';
+  if (code <= 2)                     return isDay ? '🌤️' : '🌙';
+  if (code === 3)                    return '☁️';
+  if (code <= 49)                    return '🌫️';
+  if (code <= 59)                    return '🌦️';
+  if (code <= 67)                    return '🌧️';
+  if (code <= 77)                    return '❄️';
+  if (code <= 82)                    return '🌧️';
+  if (code <= 86)                    return '🌨️';
+  if (code <= 99)                    return '⛈️';
   return isDay ? '☀️' : '🌙';
+}
+
+function wmoDescription(code) {
+  if (code === 0)          return 'Clear';
+  if (code <= 2)           return 'Partly cloudy';
+  if (code === 3)          return 'Overcast';
+  if (code <= 49)          return 'Foggy';
+  if (code <= 59)          return 'Drizzle';
+  if (code <= 67)          return 'Rain';
+  if (code <= 77)          return 'Snow';
+  if (code <= 82)          return 'Showers';
+  if (code <= 86)          return 'Snow showers';
+  if (code <= 99)          return 'Thunderstorm';
+  return '';
 }
 
 function greeting() {
@@ -47,12 +147,62 @@ function greeting() {
   return 'Good evening';
 }
 
-function formatDate() {
-  return new Date().toLocaleDateString('en-AU', { weekday: 'long', month: 'long', day: 'numeric' });
+function getFullDate() {
+  return new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+function isWeekend(date) {
+  const day = date.getDay();
+  return day === 0 || day === 6;
+}
+
+// Extract the emoji character from a category string like "📚 Book" → "📚"
+function categoryEmoji(category) {
+  if (!category) return '✨';
+  // Grab the first grapheme cluster (emoji) from the string
+  const match = category.match(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic})/u);
+  return match ? match[0] : category.charAt(0);
+}
+
+// Return due-date chip style info based on the task's due date relative to today
+function dueDateChipStyle(dueDate, C) {
+  if (!dueDate) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDate);
+  due.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((due - today) / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) {
+    // Overdue
+    return { bg: DUE_COLORS.overdueBg, text: DUE_COLORS.overdueText };
+  } else if (diffDays === 0) {
+    // Today
+    return { bg: DUE_COLORS.todayBg, text: DUE_COLORS.todayText };
+  } else if (diffDays === 1) {
+    // Tomorrow
+    return { bg: DUE_COLORS.tomorrowBg, text: C.accent };
+  } else {
+    // Upcoming
+    return { bg: C.border, text: C.textMuted };
+  }
+}
+
+function formatDueLabel(dueDate) {
+  if (!dueDate) return '';
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDate);
+  due.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((due - today) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) return `${Math.abs(diffDays)}d overdue`;
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Tomorrow';
+  return due.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' });
 }
 
 export default function HomeScreen({ navigation }) {
-  const { state, setState } = useApp();
+  const { state, setState, homeEditMode, setHomeEditMode } = useApp();
   const C = useTheme();
   const [focusInput, setFocusInput] = useState('');
   const [weather, setWeather] = useState(null);
@@ -60,22 +210,39 @@ export default function HomeScreen({ navigation }) {
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameEditValue, setNameEditValue] = useState(state.userName || '');
-  const quote = QUOTES[new Date().getDate() % QUOTES.length];
+  // Local notes draft — keeps TextInput responsive while debouncing state writes
+  const [notesDraft, setNotesDraft] = useState(state.notes || '');
+  const notesDebounceRef = useRef(null);
+  const notesInputRef = useRef(null);
+  const notesSelectionRef = useRef({ start: 0, end: 0 });
+  // IDs of todos just checked on the home card — shown briefly then fade from view
+  const [justChecked, setJustChecked] = useState({});
+  const [selectedEnjoyingItem, setSelectedEnjoyingItem] = useState(null);
+  const [photoCarouselIndex, setPhotoCarouselIndex] = useState(0);
+  const [worldCupMatch, setWorldCupMatch] = useState(null);
+  const [worldCupDismissed, setWorldCupDismissed] = useState(false);
+  const [settingsHintVisible, setSettingsHintVisible] = useState(!state.hasSeenSettingsHint);
+  const settingsHintAnim = useRef(new Animated.Value(!state.hasSeenSettingsHint ? 1 : 0)).current;
 
+  const quote = QUOTES[new Date().getDate() % QUOTES.length];
   const F = useFont();
   const styles = useMemo(() => makeStyles(C, F), [C, F]);
+
+  // Keep notesDraft in sync when state.notes changes from outside this component
+  useEffect(() => {
+    setNotesDraft(state.notes || '');
+  }, [state.notes]);
 
   // Calculate overdue/upcoming tasks
   const allTodos = (state.workLists || [])
     .filter((l) => !state.weekendMode || !l.isWork)
     .flatMap((l) => (state.workTodos[l.id] || []).filter((t) => !t.completed && t.dueDate));
 
-  const now = new Date();
-  const fiveDaysFromNow = new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000);
-  const overdueOrUrgent = allTodos.filter((t) => new Date(t.dueDate) <= fiveDaysFromNow);
-  const overdueTodos = allTodos.filter((t) => new Date(t.dueDate) < now);
+  const todayMidnight = new Date();
+  todayMidnight.setHours(0, 0, 0, 0);
+  const overdueTodos = allTodos.filter((t) => new Date(t.dueDate) < todayMidnight);
 
-  const shouldShowBanner = !bannerDismissed && (overdueTodos.length > 0 || overdueOrUrgent.length > 0);
+  const shouldShowBanner = !bannerDismissed && overdueTodos.length > 0;
 
   useEffect(() => {
     async function fetchWeather() {
@@ -85,21 +252,28 @@ export default function HomeScreen({ navigation }) {
         return;
       }
       try {
-        const location = encodeURIComponent(state.weatherLocation.trim());
-        const url = `https://api.openweathermap.org/data/2.5/weather?q=${location}&appid=${WEATHER_API_KEY}&units=metric`;
-        const res = await fetch(url);
-        if (!res.ok) {
-          setWeatherError(true);
-          setWeather(null);
-          return;
-        }
-        const data = await res.json();
-        const now = Math.floor(Date.now() / 1000);
-        const isDay = now >= data.sys?.sunrise && now < data.sys?.sunset;
+        // Step 1: geocode city name → lat/lon via Nominatim (no key required)
+        const geoRes = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(state.weatherLocation.trim())}&format=json&limit=1`,
+          { headers: { 'Accept-Language': 'en', 'User-Agent': 'GatherApp/1.0' } }
+        );
+        const geoData = await geoRes.json();
+        if (!geoData?.length) { setWeatherError(true); setWeather(null); return; }
+        const { lat, lon } = geoData[0];
+
+        // Step 2: fetch weather from Open-Meteo (no key required)
+        const wxRes = await fetch(
+          `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code,is_day&temperature_unit=celsius`
+        );
+        if (!wxRes.ok) { setWeatherError(true); setWeather(null); return; }
+        const wxData = await wxRes.json();
+        const current = wxData.current;
+        const code = current.weather_code;
+        const isDay = current.is_day === 1;
         setWeather({
-          emoji: weatherCodeToEmoji(data.weather?.[0]?.id, isDay),
-          temp: Math.round(data.main?.temp),
-          description: data.weather?.[0]?.main,
+          emoji: weatherCodeToEmoji(code, isDay),
+          temp: Math.round(current.temperature_2m),
+          description: wmoDescription(code),
         });
         setWeatherError(false);
       } catch (_) {
@@ -112,20 +286,102 @@ export default function HomeScreen({ navigation }) {
     return () => clearInterval(interval);
   }, [state.weatherLocation]);
 
+  useEffect(() => {
+    if (!state.worldCupAlerts) { setWorldCupMatch(null); setWorldCupDismissed(false); return; }
+    // Reset dismissed every time the toggle is turned on
+    setWorldCupDismissed(false);
+
+    async function fetchWorldCup() {
+      try {
+        const res = await fetch('https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard');
+        if (!res.ok) return;
+        const data = await res.json();
+        const events = data.events || [];
+
+        const live = events.find((e) => e.status?.type?.state === 'in');
+        const pre  = events.find((e) => e.status?.type?.state === 'pre');
+        const next = live || pre || events[0];
+        if (!next) { setWorldCupMatch(null); return; }
+
+        const isLive = next.status?.type?.state === 'in';
+        const isPost = next.status?.type?.state === 'post';
+        const comp        = next.competitions?.[0];
+        const competitors = comp?.competitors || [];
+        const home  = competitors.find((c) => c.homeAway === 'home');
+        const away  = competitors.find((c) => c.homeAway === 'away');
+
+        const match = {
+          team1:        home?.team?.displayName ?? 'TBD',
+          team2:        away?.team?.displayName ?? 'TBD',
+          kickoff:      new Date(next.date),
+          isLive,
+          isPost,
+          liveScore:    isLive || isPost ? [home?.score ?? 0, away?.score ?? 0] : null,
+          statusDetail: next.status?.type?.shortDetail ?? '',
+          displayClock: next.status?.displayClock ?? '',
+          period:       next.status?.period ?? 1,
+        };
+        setWorldCupMatch(match);
+      } catch (_) {}
+    }
+
+    fetchWorldCup();
+    const interval = setInterval(fetchWorldCup, 60 * 1000);
+    return () => clearInterval(interval);
+  }, [state.worldCupAlerts]);
+
+  function dismissSettingsHint() {
+    Animated.timing(settingsHintAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
+      setSettingsHintVisible(false);
+      setState((s) => ({ ...s, hasSeenSettingsHint: true }));
+    });
+  }
+
   const openTodos = (state.workLists || [])
     .filter((l) => !state.weekendMode || !l.isWork)
-    .flatMap((l) => (state.workTodos[l.id] || []).filter((t) => !t.completed).map((t) => ({ ...t, listName: l.name, listId: l.id })))
+    .flatMap((l) => (state.workTodos[l.id] || [])
+      .filter((t) => !t.completed || justChecked[t.id])
+      .map((t) => ({ ...t, listName: l.name, listId: l.id, listColorIndex: l.colorIndex ?? 0 })))
     .slice(0, 5);
 
   const todayCheckin = (state.checkIns || []).find(
     (e) => new Date(e.createdAt).toDateString() === new Date().toDateString()
   );
 
+  // --- Habits calculations ---
+  const today = new Date().toISOString().slice(0, 10);
+  const todayIsWeekend = isWeekend(new Date());
+  const allHabits = state.habits || [];
+  const applicableHabits = allHabits.filter((h) => !(h.frequency === 'weekday' && todayIsWeekend));
+  const habitsTotal = applicableHabits.length;
+  const habitsDone = applicableHabits.filter((h) => !!(state.habitLog?.[h.id]?.[today])).length;
+  const habitsProgress = habitsTotal > 0 ? habitsDone / habitsTotal : 0;
+
+  function toggleHabit(habitId) {
+    setState((s) => {
+      const log = s.habitLog || {};
+      const dayLog = { ...(log[habitId] || {}) };
+      if (dayLog[today]) {
+        delete dayLog[today];
+      } else {
+        dayLog[today] = true;
+      }
+      return { ...s, habitLog: { ...log, [habitId]: dayLog } };
+    });
+  }
+
+  // --- Section renderers ---
+
   function renderQuoteSection() {
     return (
       <View style={[styles.card, styles.quoteCard]} key="quote">
-        <Text style={styles.quoteText}>"{quote.text}"</Text>
-        {!!quote.author && <Text style={styles.quoteAuthor}>— {quote.author}</Text>}
+        <View style={styles.quoteInner}>
+          <View style={styles.quoteAccentBar} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.quoteText}>"{quote.text}"</Text>
+            {!!quote.author && <Text style={styles.quoteAuthor}>— {quote.author}</Text>}
+          </View>
+        </View>
       </View>
     );
   }
@@ -166,10 +422,10 @@ export default function HomeScreen({ navigation }) {
     );
   }
 
-  function renderWorkSection() {
-    if ((state.hiddenSections || []).includes('work')) return null;
+  function renderTasksSection() {
+    if ((state.hiddenSections || []).includes('tasks')) return null;
     return (
-      <View style={styles.section} key="work">
+      <View style={styles.section} key="tasks">
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>ON YOUR PLATE</Text>
           <TouchableOpacity onPress={() => navigation.navigate('Tasks')}>
@@ -180,17 +436,31 @@ export default function HomeScreen({ navigation }) {
           {openTodos.length === 0 ? (
             <Text style={styles.empty}>All clear — nothing on your plate.</Text>
           ) : (
-            openTodos.map((t) => (
-              <Pressable key={t.id} style={styles.todoRow} onPress={() => toggleTodo(t.listId, t.id)}>
-                <View style={[styles.check, t.completed && styles.checkDone]}>
-                  {t.completed && <Text style={styles.checkMark}>✓</Text>}
-                </View>
-                <View style={styles.todoTextGroup}>
-                  <Text style={[styles.todoText, t.completed && styles.todoTextDone]}>{t.text}</Text>
-                  <Text style={styles.todoListName}>{t.listName}</Text>
-                </View>
-              </Pressable>
-            ))
+            openTodos.map((t) => {
+              const chipStyle = t.dueDate ? dueDateChipStyle(t.dueDate, C) : null;
+              const dueLabel = t.dueDate ? formatDueLabel(t.dueDate) : null;
+              const isChecked = t.completed || justChecked[t.id];
+              const badgeColor = LIST_BADGE_COLORS[t.listColorIndex ?? 0];
+              const badgeLetter = (t.listName || '?').charAt(0).toUpperCase();
+              return (
+                <Pressable key={t.id} style={[styles.todoRow, isChecked && { opacity: 0.5 }]} onPress={() => toggleTodo(t.listId, t.id)}>
+                  <View style={[styles.check, isChecked && styles.checkDone]}>
+                    {isChecked && <Text style={styles.checkMark}>✓</Text>}
+                  </View>
+                  <View style={[styles.listBadge, { backgroundColor: badgeColor.bg }]}>
+                    <Text style={[styles.listBadgeLetter, { color: badgeColor.text }]}>{badgeLetter}</Text>
+                  </View>
+                  <View style={styles.todoTextGroup}>
+                    <Text style={[styles.todoText, isChecked && styles.todoTextDone]}>{t.text}</Text>
+                  </View>
+                  {chipStyle && dueLabel && !isChecked && (
+                    <View style={[styles.dueDateChip, { backgroundColor: chipStyle.bg }]}>
+                      <Text style={[styles.dueDateChipText, { color: chipStyle.text }]}>{dueLabel}</Text>
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })
           )}
         </View>
       </View>
@@ -209,7 +479,15 @@ export default function HomeScreen({ navigation }) {
         </View>
         <View style={styles.card}>
           {todayCheckin ? (
-            <Text style={styles.checkinPreview} numberOfLines={3}>{todayCheckin.body}</Text>
+            <>
+              <View style={styles.checkinMeta}>
+                {!!todayCheckin.mood && <Text style={styles.checkinMoodEmoji}>{todayCheckin.mood}</Text>}
+                <Text style={styles.checkinDate}>
+                  {new Date(todayCheckin.createdAt).toLocaleDateString('en-AU', { weekday: 'long', month: 'long', day: 'numeric' })}
+                </Text>
+              </View>
+              <Text style={styles.checkinPreview} numberOfLines={3}>{todayCheckin.body}</Text>
+            </>
           ) : (
             <Text style={styles.empty}>No check-in yet today.</Text>
           )}
@@ -218,40 +496,333 @@ export default function HomeScreen({ navigation }) {
     );
   }
 
-  function renderConsumingSection() {
-    if ((state.hiddenSections || []).includes('consuming')) return null;
+  function renderHabitsSection() {
+    if ((state.hiddenSections || []).includes('habits')) return null;
     return (
-      <View style={styles.section} key="consuming">
+      <View style={styles.section} key="habits">
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>CURRENTLY ENJOYING</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Hobbies')}>
+          <Text style={styles.sectionTitle}>HABITS</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Habits')}>
             <Text style={styles.seeAll}>See all</Text>
           </TouchableOpacity>
         </View>
         <View style={styles.card}>
-          {(state.currentlyConsuming || []).filter((i) => (i.status || 'current') === 'current').length === 0 ? (
-            <Text style={styles.empty}>Nothing added yet.</Text>
+          {habitsTotal === 0 ? (
+            <>
+              <Text style={styles.empty}>No habits yet.</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Habits')} style={{ marginTop: 8 }}>
+                <Text style={styles.seeAll}>Set some up →</Text>
+              </TouchableOpacity>
+            </>
           ) : (
-            <Text style={styles.consumingPreview}>
-              {(state.currentlyConsuming || [])
-                .filter((i) => (i.status || 'current') === 'current')
-                .slice(0, 3)
-                .map((i) => i.title)
-                .join(' · ')}
-            </Text>
+            <>
+              {applicableHabits.map((habit) => {
+                const done = !!(state.habitLog?.[habit.id]?.[today]);
+                return (
+                  <Pressable key={habit.id} style={[styles.todoRow, done && { opacity: 0.5 }]} onPress={() => toggleHabit(habit.id)}>
+                    <View style={[styles.check, done && styles.checkDone]}>
+                      {done && <Text style={styles.checkMark}>✓</Text>}
+                    </View>
+                    <Text style={[styles.todoText, done && styles.todoTextDone]}>
+                      {habit.emoji ? `${habit.emoji} ` : ''}{habit.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+              {/* Progress bar */}
+              <View style={[styles.habitsBarTrack, { marginTop: 10 }]}>
+                <View style={[styles.habitsBarFill, { width: `${Math.round(habitsProgress * 100)}%` }]} />
+              </View>
+              <View style={styles.habitsCountRow}>
+                <Text style={styles.habitsCount}>{habitsDone}/{habitsTotal}</Text>
+                <Text style={styles.habitsCountLabel}> today</Text>
+              </View>
+            </>
           )}
         </View>
       </View>
     );
   }
 
+  function wrapNotesSelection(wrapper) {
+    const { start, end } = notesSelectionRef.current;
+    const selected = notesDraft.slice(start, end);
+    const newText = notesDraft.slice(0, start) + `${wrapper}${selected}${wrapper}` + notesDraft.slice(end);
+    setNotesDraft(newText);
+    if (notesDebounceRef.current) clearTimeout(notesDebounceRef.current);
+    notesDebounceRef.current = setTimeout(() => {
+      setState((s) => ({ ...s, notes: newText }));
+    }, 600);
+  }
+
+  function insertNotesBullet() {
+    const { start } = notesSelectionRef.current;
+    const lineStart = notesDraft.lastIndexOf('\n', start - 1) + 1;
+    const newText = notesDraft.slice(0, lineStart) + '• ' + notesDraft.slice(lineStart);
+    setNotesDraft(newText);
+    if (notesDebounceRef.current) clearTimeout(notesDebounceRef.current);
+    notesDebounceRef.current = setTimeout(() => {
+      setState((s) => ({ ...s, notes: newText }));
+    }, 600);
+  }
+
+  function renderNotesSection() {
+    if ((state.hiddenSections || []).includes('notes')) return null;
+    return (
+      <View style={styles.section} key="notes">
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>NOTES</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Notes')}>
+            <Text style={styles.seeAll}>Edit</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.card}>
+          <View style={styles.notesToolbar}>
+            <TouchableOpacity style={styles.notesToolbarBtn} onPress={() => wrapNotesSelection('**')}>
+              <Text style={[styles.notesToolbarBtnText, { fontFamily: F.heading }]}>B</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.notesToolbarBtn} onPress={() => wrapNotesSelection('_')}>
+              <Text style={[styles.notesToolbarBtnText, { fontFamily: F.italic || F.body, fontStyle: F.italic ? 'normal' : 'italic' }]}>I</Text>
+            </TouchableOpacity>
+            <View style={styles.notesToolbarDivider} />
+            <TouchableOpacity style={styles.notesToolbarBtn} onPress={insertNotesBullet}>
+              <Ionicons name="list-outline" size={16} color={C.textMuted} />
+            </TouchableOpacity>
+          </View>
+          <TextInput
+            ref={notesInputRef}
+            style={styles.notesInput}
+            multiline
+            placeholder="Tap to jot something down…"
+            placeholderTextColor={C.textFaint}
+            value={notesDraft}
+            onSelectionChange={(e) => { notesSelectionRef.current = e.nativeEvent.selection; }}
+            onChangeText={(text) => {
+              setNotesDraft(text);
+              if (notesDebounceRef.current) clearTimeout(notesDebounceRef.current);
+              notesDebounceRef.current = setTimeout(() => {
+                setState((s) => ({ ...s, notes: text }));
+              }, 600);
+            }}
+          />
+        </View>
+      </View>
+    );
+  }
+
+  function renderCountdownsSection() {
+    if ((state.hiddenSections || []).includes('countdowns')) return null;
+    const countdowns = (state.countdowns || []).slice(0, 5);
+    return (
+      <View style={styles.section} key="countdowns">
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>COUNTDOWNS</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Countdowns')}>
+            <Text style={styles.seeAll}>Manage</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.card}>
+          {countdowns.length === 0 ? (
+            <>
+              <Text style={styles.empty}>No countdowns yet.</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Countdowns')} style={{ marginTop: 8 }}>
+                <Text style={styles.seeAll}>Add one →</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            countdowns.map((cd) => {
+              const daysAway = Math.round(
+                (new Date(cd.date).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) /
+                (1000 * 60 * 60 * 24)
+              );
+              let daysLabel;
+              let daysStyle;
+              if (daysAway === 0) {
+                daysLabel = 'Today!';
+                daysStyle = [styles.countdownDays, { fontFamily: F.heading }];
+              } else if (daysAway > 0) {
+                daysLabel = `${daysAway} day${daysAway === 1 ? '' : 's'} away`;
+                daysStyle = styles.countdownDays;
+              } else {
+                daysLabel = `${Math.abs(daysAway)} day${Math.abs(daysAway) === 1 ? '' : 's'} overdue`;
+                daysStyle = styles.countdownDaysOverdue;
+              }
+              return (
+                <View key={cd.id} style={styles.countdownRow}>
+                  <Text style={styles.countdownLabel} numberOfLines={1}>{cd.label || cd.name || cd.title}</Text>
+                  <Text style={daysStyle}>{daysLabel}</Text>
+                </View>
+              );
+            })
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  function renderQuickLinksSection() {
+    if ((state.hiddenSections || []).includes('quicklinks')) return null;
+    const quickLinks = state.quickLinks || [];
+    return (
+      <View style={styles.section} key="quicklinks">
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>QUICK LINKS</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('QuickLinks')}>
+            <Text style={styles.seeAll}>Manage</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.card}>
+          {quickLinks.length === 0 ? (
+            <>
+              <Text style={styles.empty}>No links yet.</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('QuickLinks')} style={{ marginTop: 8 }}>
+                <Text style={styles.seeAll}>Add one →</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <View style={styles.quickLinksWrap}>
+              {quickLinks.map((link) => (
+                <TouchableOpacity
+                  key={link.id}
+                  style={styles.quickLinkPill}
+                  onPress={() => {
+                    const url = link.url;
+                    if (!url.startsWith('https://') && !url.startsWith('http://')) return;
+                    Linking.openURL(url).catch(() => {});
+                  }}
+                >
+                  <Text style={styles.quickLinkText}>{link.label || link.title || link.url}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  function renderEnjoyingSection() {
+    const hiddenKeys = state.hiddenSections || [];
+    if (hiddenKeys.includes('enjoying') || hiddenKeys.includes('consuming')) return null;
+
+    const items = (state.currentlyConsuming || [])
+      .filter((i) => (i.status || 'current') === 'current')
+      .slice(0, 6);
+
+    return (
+      <View style={styles.section} key="enjoying">
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>CURRENTLY ENJOYING</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Hobbies')}>
+            <Text style={styles.seeAll}>See all</Text>
+          </TouchableOpacity>
+        </View>
+        {items.length === 0 ? (
+          <View style={styles.card}>
+            <Text style={styles.empty}>Nothing added yet.</Text>
+          </View>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.enjoyingScroll}
+          >
+            {items.map((item) => (
+              <TouchableOpacity key={item.id} style={styles.enjoyingCard} onPress={() => setSelectedEnjoyingItem(item)} activeOpacity={0.8}>
+                <View style={styles.enjoyingCover}>
+                  {item.coverUri ? (
+                    <Image source={{ uri: item.coverUri }} style={styles.enjoyingCoverImage} />
+                  ) : (
+                    <Text style={styles.enjoyingEmoji}>{categoryEmoji(item.category)}</Text>
+                  )}
+                </View>
+                <View style={styles.enjoyingLabel}>
+                  <Text style={styles.enjoyingTitle} numberOfLines={1} ellipsizeMode="tail">
+                    {item.title}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+      </View>
+    );
+  }
+
+  function renderPhotosSection() {
+    if ((state.hiddenSections || []).includes('photos')) return null;
+    const photos = (state.photos || []).slice(0, 20);
+    const carouselWidth = Dimensions.get('window').width - 40;
+    return (
+      <View style={styles.section} key="photos">
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>PHOTOS</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Photos')}>
+            <Text style={styles.seeAll}>See all</Text>
+          </TouchableOpacity>
+        </View>
+        {photos.length === 0 ? (
+          <View style={styles.card}>
+            <Text style={styles.empty}>No photos yet.</Text>
+          </View>
+        ) : (
+          <View>
+            <FlatList
+              data={photos}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(item, i) => item.id || String(i)}
+              onMomentumScrollEnd={(e) => {
+                const idx = Math.round(e.nativeEvent.contentOffset.x / carouselWidth);
+                setPhotoCarouselIndex(idx);
+              }}
+              renderItem={({ item }) => {
+                const uri = typeof item === 'string' ? item : (item.src || item.uri);
+                return (
+                  <TouchableOpacity onPress={() => navigation.navigate('Photos')} activeOpacity={0.92}>
+                    <Image source={{ uri }} style={[styles.carouselImage, { width: carouselWidth }]} />
+                    {!!item.caption && (
+                      <View style={styles.carouselCaption}>
+                        <Text style={styles.carouselCaptionText} numberOfLines={2}>{item.caption}</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              }}
+              style={{ borderRadius: RADIUS.lg, overflow: 'hidden' }}
+            />
+            {photos.length > 1 && (
+              <View style={styles.carouselDots}>
+                {photos.map((_, i) => (
+                  <View key={i} style={[styles.carouselDot, i === photoCarouselIndex && styles.carouselDotActive]} />
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  // Map section keys to renderers — 'work' and 'tasks' are the same section;
+  // 'consuming' and 'enjoying' are the same section (backward compat)
   const sectionRenderers = {
-    [SECTION_KEYS.QUOTE]: renderQuoteSection,
-    [SECTION_KEYS.TOP3]: renderTop3Section,
-    [SECTION_KEYS.WORK]: renderWorkSection,
-    [SECTION_KEYS.CHECKIN]: renderCheckinSection,
-    [SECTION_KEYS.CONSUMING]: renderConsumingSection,
+    quote:      renderQuoteSection,
+    top3:       renderTop3Section,
+    tasks:      renderTasksSection,
+    work:       renderTasksSection,   // backward compat alias
+    checkin:    renderCheckinSection,
+    habits:     renderHabitsSection,
+    notes:      renderNotesSection,
+    countdowns: renderCountdownsSection,
+    quicklinks: renderQuickLinksSection,
+    enjoying:   renderEnjoyingSection,
+    consuming:  renderEnjoyingSection, // backward compat alias
+    photos:     renderPhotosSection,
   };
+
+  // --- Event handlers ---
 
   function handleNameEdit() {
     const trimmed = nameEditValue.trim();
@@ -290,20 +861,96 @@ export default function HomeScreen({ navigation }) {
 
   function toggleTodo(listId, todoId) {
     setState((s) => {
+      const todo = (s.workTodos[listId] || []).find((t) => t.id === todoId);
+      const completing = !todo?.completed;
       const todos = (s.workTodos[listId] || []).map((t) =>
-        t.id === todoId ? { ...t, completed: !t.completed, completedAt: !t.completed ? new Date().toISOString() : null } : t
+        t.id === todoId ? { ...t, completed: completing, completedAt: completing ? new Date().toISOString() : null } : t
       );
+      if (completing) {
+        setJustChecked((prev) => ({ ...prev, [todoId]: true }));
+        setTimeout(() => {
+          setJustChecked((prev) => { const next = { ...prev }; delete next[todoId]; return next; });
+        }, 1200);
+      }
       return { ...s, workTodos: { ...s.workTodos, [listId]: todos } };
     });
   }
 
+  // Resolve the ordered section keys, falling back to homeCardOrder default, then
+  // legacy sectionOrder so old installs keep working
+  const orderedKeys = state.homeCardOrder
+    || state.sectionOrder
+    || ['quote', 'top3', 'habits', 'tasks', 'checkin', 'notes', 'countdowns', 'quicklinks', 'enjoying', 'photos'];
+
+  // Deduplicate — 'work'/'tasks' and 'enjoying'/'consuming' aliases could appear twice
+  const seenSections = new Set();
+  const deduplicatedKeys = orderedKeys.filter((key) => {
+    // Normalise aliases to a canonical key for dedup tracking
+    const canonical = (key === 'work') ? 'tasks' : (key === 'consuming') ? 'enjoying' : key;
+    if (seenSections.has(canonical)) return false;
+    seenSections.add(canonical);
+    return true;
+  });
+
+  // ── Home edit mode: build draggable item list from current ordered keys ──
+  const editableCards = useMemo(() => {
+    return deduplicatedKeys
+      .filter((key) => HOME_CARD_LABELS[key]) // only show keys we have labels for
+      .map((key) => ({ key, label: HOME_CARD_LABELS[key] || key }));
+  }, [deduplicatedKeys]);
+
+  if (homeEditMode) {
+    return (
+      <SafeAreaView style={[styles.safe, { backgroundColor: C.bg }]} edges={[]}>
+        <View style={styles.editModeHeader}>
+          <Text style={styles.editModeTitle}>Reorder Cards</Text>
+          <Text style={styles.editModeHint}>Long-press a card to start dragging</Text>
+        </View>
+        <DraggableFlatList
+          data={editableCards}
+          keyExtractor={(item) => item.key}
+          onDragEnd={({ data }) => {
+            setState((s) => ({ ...s, homeCardOrder: data.map((d) => d.key) }));
+          }}
+          renderItem={({ item, drag, isActive }) => (
+            <ScaleDecorator>
+              <TouchableOpacity
+                style={[
+                  styles.editCardRow,
+                  { backgroundColor: isActive ? (C.accentLight || C.border) : C.bgCard, borderBottomColor: C.border },
+                ]}
+                onLongPress={() => { Vibration.vibrate(40); drag(); }}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.editCardHandle, { color: C.textMuted }]}>⠿</Text>
+                <Text style={[styles.editCardLabel, { color: C.text }]}>{item.label}</Text>
+              </TouchableOpacity>
+            </ScaleDecorator>
+          )}
+          contentContainerStyle={{ paddingBottom: 100 }}
+        />
+        <View style={[styles.editDoneBar, { backgroundColor: C.bg, borderTopColor: C.border }]}>
+          <TouchableOpacity
+            style={[styles.editDoneBtn, { backgroundColor: C.accent }]}
+            onPress={() => setHomeEditMode(false)}
+            accessibilityLabel="Done editing home"
+          >
+            <Text style={styles.editDoneBtnText}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={[]}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.greetingDate}>{greeting()}, {formatDate()}</Text>
+            <View style={styles.greetingRow}>
+              <Text style={styles.greetingDate}>{greeting()} — {getFullDate()}</Text>
+            </View>
             {editingName ? (
               <View style={styles.nameEditRow}>
                 <TextInput
@@ -330,14 +977,8 @@ export default function HomeScreen({ navigation }) {
             )}
           </View>
           {weather && (
-            <View style={styles.weatherBadge}>
-              <Text style={styles.weatherEmoji}>{weather.emoji}</Text>
-              <Text style={styles.weatherTemp}>{weather.temp}°</Text>
-            </View>
-          )}
-          {weatherError && (
-            <View style={styles.weatherBadge}>
-              <Text style={{ fontSize: 18, color: C.danger }}>⚠️</Text>
+            <View style={styles.weatherPill}>
+              <Text style={styles.weatherPillText}>{weather.emoji}  {weather.temp}°  {weather.description}</Text>
             </View>
           )}
         </View>
@@ -346,16 +987,9 @@ export default function HomeScreen({ navigation }) {
         {shouldShowBanner && (
           <View style={styles.bannerContainer}>
             <View style={styles.banner}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.bannerTitle}>
-                  {overdueTodos.length > 0 ? '⚠️ Tasks Overdue' : '📅 Tasks Due Soon'}
-                </Text>
-                <Text style={styles.bannerText}>
-                  {overdueTodos.length > 0
-                    ? `${overdueTodos.length} task${overdueTodos.length > 1 ? 's' : ''} overdue`
-                    : `${overdueOrUrgent.length} task${overdueOrUrgent.length > 1 ? 's' : ''} due within 5 days`}
-                </Text>
-              </View>
+              <Text style={styles.bannerText}>
+                {`${overdueTodos.length} task${overdueTodos.length > 1 ? 's' : ''} need attention`}
+              </Text>
               <TouchableOpacity onPress={() => setBannerDismissed(true)} style={styles.bannerClose}>
                 <Text style={styles.bannerCloseText}>✕</Text>
               </TouchableOpacity>
@@ -363,14 +997,117 @@ export default function HomeScreen({ navigation }) {
           </View>
         )}
 
-        {/* Render sections in user-defined order */}
-        {(state.sectionOrder || ['quote', 'top3', 'work', 'checkin', 'consuming']).map((sectionKey) => {
+        {/* World Cup Banner */}
+        {state.worldCupAlerts && worldCupMatch && !worldCupDismissed && (() => {
+          const { team1, team2, kickoff, isLive, isPost, liveScore, statusDetail, displayClock, period } = worldCupMatch;
+
+          // Header line
+          let headerLine;
+          if (isLive) {
+            let periodLabel = '';
+            if (statusDetail.toLowerCase().includes('halftime') || statusDetail.toLowerCase().includes('half time')) {
+              periodLabel = 'Half Time';
+            } else if (period >= 3) {
+              periodLabel = displayClock ? `ET ${displayClock}` : 'Extra Time';
+            } else {
+              periodLabel = displayClock ? `${displayClock}` : (period === 1 ? '1st Half' : '2nd Half');
+            }
+            headerLine = `🔴 LIVE · ${periodLabel}`;
+          } else if (isPost) {
+            headerLine = '⚽ FIFA WORLD CUP 2026 · Full Time';
+          } else {
+            const minsAway = Math.round((kickoff.getTime() - Date.now()) / 60000);
+            const dateLabel = kickoff.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
+            const timeStr   = kickoff.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true });
+            const countdown = minsAway < 60
+              ? `in ${minsAway}m`
+              : minsAway < 1440
+                ? `in ${Math.floor(minsAway / 60)}h ${minsAway % 60}m`
+                : `in ${Math.floor(minsAway / 1440)} days`;
+            headerLine = `⚽ FIFA WORLD CUP 2026 · ${dateLabel} ${timeStr} · ${countdown}`;
+          }
+
+          return (
+            <View style={styles.wcBanner}>
+              <View style={[styles.wcAccentBar, (isLive) && { backgroundColor: LIVE_RED }]} />
+              <View style={styles.wcContent}>
+                <Text style={[styles.wcHeader, isLive && { color: LIVE_RED }]}>{headerLine}</Text>
+                <View style={styles.wcMatchRow}>
+                  <Text style={styles.wcTeam}>{flagFor(team1)} <Text style={styles.wcTeamName}>{team1}</Text></Text>
+                  {liveScore
+                    ? <Text style={[styles.wcScore, { color: isLive ? LIVE_RED : C.text }]}>{liveScore[0]} – {liveScore[1]}</Text>
+                    : <Text style={styles.wcVs}>vs</Text>
+                  }
+                  <Text style={styles.wcTeam}>{flagFor(team2)} <Text style={styles.wcTeamName}>{team2}</Text></Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => { setWorldCupDismissed(true); setTimeout(() => setWorldCupDismissed(false), 5 * 60 * 1000); }} style={styles.wcClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={styles.wcCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        })()}
+
+        {/* Settings hint — shown once after onboarding */}
+        {settingsHintVisible && (
+          <Animated.View style={[styles.settingsHint, { opacity: settingsHintAnim }]}>
+            <Text style={styles.settingsHintText}>⚙️  Tip: customise your themes, fonts, and cards in <Text style={styles.settingsHintBold}>Settings</Text></Text>
+            <TouchableOpacity onPress={dismissSettingsHint} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={styles.settingsHintClose}>✕</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        )}
+
+        {/* Render sections in homeCardOrder, skipping hidden ones */}
+        {deduplicatedKeys.map((sectionKey) => {
           const renderer = sectionRenderers[sectionKey];
           return renderer ? renderer() : null;
         })}
 
         <View style={{ height: 32 }} />
       </ScrollView>
+
+      {/* Currently Enjoying detail sheet */}
+      <BottomSheet visible={!!selectedEnjoyingItem} onClose={() => setSelectedEnjoyingItem(null)} backgroundColor={C.bg}>
+        {selectedEnjoyingItem && (
+          <ScrollView contentContainerStyle={styles.enjoyingDetail} showsVerticalScrollIndicator={false}>
+            {/* Cover */}
+            <View style={styles.enjoyingDetailCover}>
+              {selectedEnjoyingItem.coverUri ? (
+                <Image source={{ uri: selectedEnjoyingItem.coverUri }} style={styles.enjoyingDetailCoverImage} />
+              ) : (
+                <Text style={styles.enjoyingDetailEmoji}>{categoryEmoji(selectedEnjoyingItem.category)}</Text>
+              )}
+            </View>
+            {/* Title + creator */}
+            <Text style={styles.enjoyingDetailTitle}>{selectedEnjoyingItem.title}</Text>
+            {selectedEnjoyingItem.creator ? (
+              <Text style={styles.enjoyingDetailCreator}>{selectedEnjoyingItem.creator}</Text>
+            ) : null}
+            {/* Category badge */}
+            <View style={styles.enjoyingDetailBadge}>
+              <Text style={styles.enjoyingDetailBadgeText}>{selectedEnjoyingItem.category || 'Other'}</Text>
+            </View>
+            {/* Star rating */}
+            {selectedEnjoyingItem.rating > 0 && (
+              <View style={styles.enjoyingDetailStars}>
+                {[1,2,3,4,5].map((star) => (
+                  <Text key={star} style={[styles.enjoyingDetailStar, { color: star <= selectedEnjoyingItem.rating ? C.accent : C.border }]}>
+                    {star <= selectedEnjoyingItem.rating ? '★' : '☆'}
+                  </Text>
+                ))}
+              </View>
+            )}
+            {/* Review / notes */}
+            {selectedEnjoyingItem.review ? (
+              <View style={styles.enjoyingDetailReviewBox}>
+                <Text style={styles.enjoyingDetailReviewLabel}>NOTES</Text>
+                <Text style={styles.enjoyingDetailReview}>{selectedEnjoyingItem.review}</Text>
+              </View>
+            ) : null}
+          </ScrollView>
+        )}
+      </BottomSheet>
     </SafeAreaView>
   );
 }
@@ -381,52 +1118,134 @@ function makeStyles(C, F = {}) {
     scroll:           { flex: 1 },
     content:          { padding: 20 },
     header:           { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 },
-    weatherBadge:     { alignItems: 'center', backgroundColor: C.bgCard, borderRadius: RADIUS.lg, paddingHorizontal: 12, paddingVertical: 8, ...SHADOW.card },
-    weatherEmoji:     { fontSize: 22 },
-    weatherTemp:      { fontSize: 13, fontWeight: '700', color: C.text, marginTop: 2 },
-    greetingDate:     { fontSize: 14, color: C.textMuted, marginBottom: 2 },
-    name:             { fontSize: 36, fontWeight: '700', color: C.text, fontFamily: F.heading },
+    weatherPill:      { alignSelf: 'flex-end', marginBottom: 4 },
+    weatherPillText:  { fontSize: 13, color: C.textMuted, fontFamily: F.body },
+    greetingRow:      { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 2 },
+    greetingDate:     { fontSize: 13, color: C.textMuted, fontFamily: F.body },
+    name:             { fontSize: 36, fontFamily: F.heading, color: C.text },
     nameEditRow:      { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
-    nameEditInput:    { flex: 1, fontSize: 28, fontWeight: '700', color: C.text, fontFamily: F.heading, paddingVertical: 4 },
+    nameEditInput:    { flex: 1, fontSize: 28, fontFamily: F.heading, color: C.text, paddingVertical: 4 },
     nameEditSave:     { padding: 8, alignItems: 'center', justifyContent: 'center' },
     nameEditCancel:   { padding: 8, alignItems: 'center', justifyContent: 'center' },
-    nameEditBtnText:  { fontSize: 20, color: C.accent, fontWeight: '700' },
-    card:             { backgroundColor: C.bgCard, borderRadius: RADIUS.lg, padding: 16, ...SHADOW.card },
+    nameEditBtnText:  { fontSize: 20, color: C.accent, fontFamily: F.heading },
+    card:             { backgroundColor: C.bgCard, borderRadius: RADIUS.lg, padding: 16, borderWidth: 1, borderColor: C.border, ...SHADOW.card },
     quoteCard:        { marginBottom: 24 },
-    quoteText:        { fontSize: 14, fontStyle: 'italic', color: C.text, lineHeight: 22 },
-    quoteAuthor:      { fontSize: 13, color: C.textMuted, marginTop: 6 },
+    quoteInner:       { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+    quoteAccentBar:   { width: 3, height: 40, borderRadius: 2, backgroundColor: C.accent },
+    quoteText:        { fontSize: 14, fontFamily: F.italic || F.body, color: C.text, lineHeight: 22 },
+    quoteAuthor:      { fontSize: 12, fontFamily: F.body, color: C.textMuted, marginTop: 6 },
     // Banner
-    bannerContainer:  { marginHorizontal: -20, marginTop: 0, marginBottom: 16, paddingHorizontal: 20 },
-    banner:           { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#D32F2F', borderRadius: RADIUS.md, padding: 14, ...SHADOW.card },
-    bannerTitle:      { fontSize: 14, fontWeight: '700', color: '#fff' },
-    bannerText:       { fontSize: 12, color: 'rgba(255,255,255,0.9)', marginTop: 2 },
-    bannerClose:      { padding: 8 },
-    bannerCloseText:  { fontSize: 18, color: '#fff', fontWeight: '600' },
+    bannerContainer:  { marginBottom: 16 },
+    banner:           { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(200,80,50,0.08)', borderWidth: 1, borderColor: 'rgba(200,80,50,0.18)', borderRadius: RADIUS.md, padding: 12 },
+    bannerText:       { flex: 1, fontSize: 12, color: '#C85032', fontFamily: F.body },
+    bannerClose:      { padding: 6 },
+    bannerCloseText:  { fontSize: 16, color: '#C85032', fontFamily: F.heading },
+    wcBanner:         { flexDirection: 'row', alignItems: 'center', backgroundColor: C.bgCard, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border, marginBottom: 16, overflow: 'hidden', ...SHADOW.card },
+    wcAccentBar:      { width: 4, alignSelf: 'stretch', backgroundColor: WC_GREEN },
+    wcContent:        { flex: 1, paddingHorizontal: 12, paddingVertical: 10 },
+    wcHeader:         { fontSize: 10, fontFamily: F.heading, color: C.textMuted, letterSpacing: 0.6, marginBottom: 6 },
+    wcMatchRow:       { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+    wcTeam:           { fontSize: 13, fontFamily: F.body, color: C.text },
+    wcTeamName:       { fontFamily: F.heading, color: C.text },
+    wcVs:             { fontSize: 12, color: C.textMuted, fontFamily: F.body },
+    wcScore:          { fontSize: 15, fontFamily: F.heading, color: C.text },
+    wcTimeLabel:      { fontSize: 12, fontFamily: F.body, color: C.accent, marginLeft: 4 },
+    wcClose:          { paddingHorizontal: 12, paddingVertical: 10, justifyContent: 'center' },
+    wcCloseText:      { fontSize: 16, color: C.textFaint },
+    settingsHint:     { flexDirection: 'row', alignItems: 'center', backgroundColor: C.accentLight, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.accent, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16, gap: 10 },
+    settingsHintText: { flex: 1, fontSize: 13, fontFamily: F.body, color: C.accent, lineHeight: 19 },
+    settingsHintBold: { fontFamily: F.heading, color: C.accent },
+    settingsHintClose:{ fontSize: 16, color: C.accent },
     section:          { marginBottom: 20 },
     sectionHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-    sectionTitle:     { fontSize: 11, fontWeight: '700', color: C.textMuted, letterSpacing: 0.8, marginBottom: 8 },
-    seeAll:           { fontSize: 13, color: C.accent, fontWeight: '600' },
-    empty:            { fontSize: 14, color: C.textFaint },
+    sectionTitle:     { fontSize: 11, fontFamily: F.heading, color: C.textFaint, letterSpacing: 0.8, marginBottom: 8 },
+    seeAll:           { fontSize: 13, color: C.accent, fontFamily: F.heading },
+    empty:            { fontSize: 14, color: C.textFaint, fontFamily: F.body },
     // Focus items
     focusRow:         { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, gap: 10 },
-    focusCheck:       { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
-    focusCheckDone:   { backgroundColor: C.sage, borderColor: C.sage },
-    focusCheckMark:   { color: '#fff', fontSize: 12, fontWeight: '700' },
+    focusCheck:       { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
+    focusCheckDone:   { backgroundColor: C.accent, borderColor: C.accent },
+    focusCheckMark:   { color: '#fff', fontSize: 12, lineHeight: 14, fontFamily: F.heading, textAlignVertical: 'center', includeFontPadding: false },
     focusText:        { fontSize: 14, color: C.text, flex: 1, fontFamily: F.body },
     focusTextDone:    { textDecorationLine: 'line-through', color: C.textMuted },
     focusInputRow:    { paddingTop: 8, borderTopWidth: 1, borderTopColor: C.border, marginTop: 4 },
-    focusInput:       { fontSize: 14, color: C.text, paddingVertical: 4 },
+    focusInput:       { fontSize: 14, color: C.text, paddingVertical: 4, fontFamily: F.body },
     // Todos
     todoRow:          { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 10, borderBottomWidth: 1, borderBottomColor: C.border },
     check:            { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
-    checkDone:        { backgroundColor: C.sage, borderColor: C.sage },
-    checkMark:        { color: '#fff', fontSize: 11, fontWeight: '700' },
+    checkDone:        { backgroundColor: C.accent, borderColor: C.accent },
+    checkMark:        { color: '#fff', fontSize: 11, fontFamily: F.heading },
+    listBadge:        { width: 26, height: 26, borderRadius: 6, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+    listBadgeLetter:  { fontSize: 12, fontFamily: F.heading },
     todoTextGroup:    { flex: 1 },
     todoText:         { fontSize: 14, color: C.text, fontFamily: F.body },
     todoTextDone:     { textDecorationLine: 'line-through', color: C.textMuted },
-    todoListName:     { fontSize: 12, color: C.textMuted, marginTop: 1 },
+    dueDateChip:      { borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
+    dueDateChipText:  { fontSize: 11, fontFamily: F.heading },
     // Checkin
+    checkinMeta:      { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+    checkinMoodEmoji: { fontSize: 20 },
+    checkinDate:      { fontSize: 12, color: C.textMuted, fontFamily: F.body },
     checkinPreview:   { fontSize: 14, color: C.text, lineHeight: 22, fontFamily: F.body },
-    consumingPreview: { fontSize: 14, color: C.text },
+    // Habits
+    habitsCountRow:   { flexDirection: 'row', alignItems: 'baseline', marginBottom: 10 },
+    habitsCount:      { fontSize: 13, fontFamily: F.body, color: C.textMuted },
+    habitsCountLabel: { fontSize: 13, color: C.textMuted, fontFamily: F.body },
+    habitsBarTrack:   { height: 6, borderRadius: 3, backgroundColor: C.border, overflow: 'hidden' },
+    habitsBarFill:    { height: 6, borderRadius: 3, backgroundColor: C.accent },
+    // Notes
+    notesToolbar:        { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8, borderBottomWidth: 1, borderBottomColor: C.border, paddingBottom: 8 },
+    notesToolbarBtn:     { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
+    notesToolbarBtnText: { fontSize: 15, color: C.text },
+    notesToolbarDivider: { width: 1, height: 18, backgroundColor: C.border, marginHorizontal: 2 },
+    notesInput:          { fontSize: 14, color: C.text, minHeight: 80, fontFamily: F.body, lineHeight: 22, textAlignVertical: 'top', backgroundColor: 'transparent' },
+    // Countdowns
+    countdownRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.border },
+    countdownLabel:   { fontSize: 14, color: C.text, flex: 1, marginRight: 12, fontFamily: F.body },
+    countdownDays:    { fontSize: 13, color: C.accent, fontFamily: F.body },
+    countdownDaysOverdue: { fontSize: 13, color: C.danger, fontFamily: F.body },
+    // Quick links
+    quickLinksWrap:   { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    quickLinkPill:    { borderWidth: 1.5, borderColor: C.accent, borderRadius: 20, paddingVertical: 7, paddingHorizontal: 12 },
+    quickLinkText:    { fontSize: 13, color: C.accent, fontFamily: F.body },
+    // Enjoying
+    enjoyingScroll:   { paddingRight: 4 },
+    enjoyingCard:     { width: 88, borderRadius: 10, backgroundColor: C.bgCard, borderWidth: 1, borderColor: C.border, overflow: 'hidden', marginRight: 8, ...SHADOW.card },
+    enjoyingCover:    { width: 88, height: 120, backgroundColor: C.accentLight || C.border, alignItems: 'center', justifyContent: 'center', borderTopLeftRadius: 10, borderTopRightRadius: 10 },
+    enjoyingCoverImage: { width: 88, height: 120 },
+    enjoyingEmoji:    { fontSize: 28 },
+    enjoyingLabel:    { flex: 1, justifyContent: 'center', paddingHorizontal: 4 },
+    enjoyingTitle:    { fontSize: 11, color: C.text, textAlign: 'center', fontFamily: F.heading },
+    // Enjoying detail sheet
+    enjoyingDetail:       { paddingHorizontal: 24, paddingBottom: 32, alignItems: 'center' },
+    enjoyingDetailCover:  { width: 140, height: 200, borderRadius: RADIUS.lg, backgroundColor: C.accentLight, alignItems: 'center', justifyContent: 'center', marginBottom: 20, overflow: 'hidden' },
+    enjoyingDetailCoverImage: { width: 140, height: 200 },
+    enjoyingDetailEmoji:  { fontSize: 52 },
+    enjoyingDetailTitle:  { fontSize: 22, fontFamily: F.heading, color: C.text, textAlign: 'center', marginBottom: 6 },
+    enjoyingDetailCreator:{ fontSize: 15, fontFamily: F.body, color: C.textMuted, textAlign: 'center', marginBottom: 12 },
+    enjoyingDetailBadge:  { backgroundColor: C.accentLight, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, marginBottom: 16 },
+    enjoyingDetailBadgeText: { fontSize: 12, fontFamily: F.heading, color: C.accent },
+    enjoyingDetailStars:      { flexDirection: 'row', gap: 4, marginBottom: 16 },
+    enjoyingDetailStar:       { fontSize: 22 },
+    enjoyingDetailReviewBox:  { width: '100%', backgroundColor: C.bgCard, borderRadius: RADIUS.md, padding: 14, borderWidth: 1, borderColor: C.border, marginBottom: 16 },
+    enjoyingDetailReviewLabel:{ fontSize: 11, fontFamily: F.heading, color: C.textFaint, letterSpacing: 0.8, marginBottom: 6 },
+    enjoyingDetailReview:     { fontSize: 14, fontFamily: F.body, color: C.text, lineHeight: 22 },
+    // Photos
+    carouselImage:    { height: 220, borderRadius: RADIUS.lg, backgroundColor: C.border },
+    carouselCaption:  { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.45)', paddingHorizontal: 12, paddingVertical: 8, borderBottomLeftRadius: RADIUS.lg, borderBottomRightRadius: RADIUS.lg },
+    carouselCaptionText: { color: '#fff', fontSize: 12, fontFamily: F.body },
+    carouselDots:     { flexDirection: 'row', justifyContent: 'center', gap: 5, marginTop: 8 },
+    carouselDot:      { width: 6, height: 6, borderRadius: 3, backgroundColor: C.border },
+    carouselDotActive:{ backgroundColor: C.accent, width: 16 },
+    // ── Home edit mode ──
+    editModeHeader:   { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 12 },
+    editModeTitle:    { fontSize: 26, fontFamily: F.heading, color: C.text, marginBottom: 4 },
+    editModeHint:     { fontSize: 13, fontFamily: F.body, color: C.textMuted },
+    editCardRow:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1 },
+    editCardHandle:   { fontSize: 20, marginRight: 16, width: 24, textAlign: 'center' },
+    editCardLabel:    { flex: 1, fontSize: 15, fontFamily: F.body },
+    editDoneBar:      { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 20, paddingVertical: 12, borderTopWidth: 1 },
+    editDoneBtn:      { borderRadius: RADIUS.lg, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
+    editDoneBtnText:  { color: '#fff', fontSize: 16, fontFamily: F.heading },
   });
 }

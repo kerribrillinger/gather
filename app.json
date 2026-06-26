@@ -2,15 +2,15 @@
   "expo": {
     "name": "Gather",
     "slug": "gather-mobile",
-    "version": "1.0.0",
+    "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#F2F0EB"
     },
     "ios": {
       "supportsTablet": true,
@@ -22,9 +22,9 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#4F6B5D"
+        "backgroundColor": "#5D6E63"
       },
-      "backgroundColor": "#4F6B5D",
+      "backgroundColor": "#5D6E63",
       "package": "com.kerri.gathermobile",
       "edgeToEdgeEnabled": true
     },
@@ -41,6 +41,34 @@
     },
     "updates": {
       "url": "https://u.expo.dev/b047415b-f09c-4a40-bf6d-870d99346402"
-    }
+    },
+    "plugins": [
+      "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Gather needs camera access to scan the sync QR code from your desktop."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#5D6E63"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Gather needs access to your photos to add images to your gallery."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Gather needs your location to show local weather."
+        }
+      ]
+    ]
   }
 }

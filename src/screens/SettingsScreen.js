@@ -1,61 +1,166 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
-  Switch, StyleSheet, Alert,
+  Switch, StyleSheet, Platform, Modal, KeyboardAvoidingView,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatlist';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import * as Notifications from 'expo-notifications';
+import BottomSheet from '../BottomSheet';
 import { useApp, useTheme, useFont } from '../AppContext';
+import { useAlert } from '../AppAlert';
+import { showToast } from '../Toast';
 import { RADIUS, SHADOW, PALETTES, FONT_OPTIONS } from '../theme';
+import { saveData } from '../storage';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as Location from 'expo-location';
 
-const SECTION_LABELS = {
-  work:      { label: 'On Your Plate',      hint: 'Tasks section on home & nav' },
-  checkin:   { label: "Today's Check-in",   hint: 'Journal card on home' },
-  consuming: { label: 'Currently Enjoying', hint: 'Hobbies card on home & nav' },
-  habits:    { label: 'Habits',             hint: 'Habits section on home & nav' },
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+const SETTINGS_TABS = [
+  { key: 'profile',       label: 'Profile'       },
+  { key: 'sections',      label: 'Sections'      },
+  { key: 'modes',         label: 'Modes'         },
+  { key: 'notifications', label: 'Notifications' },
+  { key: 'sync',          label: 'Sync'          },
+];
+
+// All home card keys and display labels for the Sections tab
+const HOME_CARD_LABELS = {
+  quote:      'Daily Quote',
+  top3:       "Today's Top 3",
+  habits:     'Habits',
+  tasks:      'On Your Plate',
+  checkin:    "Today's Check-in",
+  notes:      'Notes',
+  countdowns: 'Countdowns',
+  quicklinks: 'Quick Links',
+  enjoying:   'Currently Enjoying',
+  photos:     'Photos',
 };
 
-const REORDERABLE_SECTIONS = [
-  { key: 'quote', label: 'Quote', emoji: '💭' },
-  { key: 'top3', label: "Today's Top 3", emoji: '🎯' },
-  { key: 'work', label: 'On Your Plate', emoji: '📋' },
-  { key: 'checkin', label: "Today's Check-in", emoji: '📝' },
-  { key: 'consuming', label: 'Currently Enjoying', emoji: '🎬' },
-];
+const HOME_CARD_DESCRIPTIONS = {
+  quote:      'A rotating inspirational quote to start your day',
+  top3:       'Pin your three most important tasks for the day',
+  habits:     'Track your daily habits and streaks at a glance',
+  tasks:      'See your open tasks across all lists',
+  checkin:    'Log your mood and a daily journal entry',
+  notes:      'Quick-access notes pinned to your home screen',
+  countdowns: 'Count down to upcoming events and dates',
+  quicklinks: 'Your saved links and bookmarks',
+  enjoying:   'Track what you\'re currently reading, watching, or listening to',
+  photos:     'A rotating photo from your saved collection',
+};
+
+const HOME_CARD_KEYS = Object.keys(HOME_CARD_LABELS);
+
+const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export default function SettingsScreen() {
   const { state, setState } = useApp();
   const C = useTheme();
-  const [nameInput, setNameInput] = useState(state.userName || '');
-  const [weatherLocationInput, setWeatherLocationInput] = useState(state.weatherLocation || '');
-  const [reorderingSections, setReorderingSections] = useState(false);
-
   const F = useFont();
   const styles = useMemo(() => makeStyles(C, F), [C, F]);
+  const showAlert = useAlert();
+  const insets = useSafeAreaInsets();
 
-  // Get current section order or use default
-  const currentSectionOrder = state.sectionOrder || ['quote', 'top3', 'work', 'checkin', 'consuming'];
-  const orderedSections = currentSectionOrder.map((key) => REORDERABLE_SECTIONS.find((s) => s.key === key)).filter(Boolean);
+  const [activeTab, setActiveTab]           = useState('profile');
+  const [paletteModalOpen, setPaletteModalOpen] = useState(false);
+  const [fontModalOpen, setFontModalOpen]   = useState(false);
 
-  function reorderSections(newData) {
-    setState((s) => ({
-      ...s,
-      sectionOrder: newData.map((item) => item.key),
-    }));
-  }
+  const [locationBusy, setLocationBusy] = useState(false);
+
+  // Sync tab state
+  const [syncModalVisible, setSyncModalVisible]   = useState(false);
+  const [syncModalMode, setSyncModalMode]         = useState('get'); // 'get' | 'send'
+  const [syncUrlInput, setSyncUrlInput]           = useState(state.syncUrl || '');
+  const [syncCodeInput, setSyncCodeInput]         = useState('');
+  const [syncBusy, setSyncBusy]                   = useState(false);
+  const [syncScanning, setSyncScanning]           = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const scannedRef = useRef(false);
+
+  // Profile tab inputs
+  const [nameInput, setNameInput]                         = useState(state.userName || '');
+  const [weatherLocationInput, setWeatherLocationInput]   = useState(state.weatherLocation || '');
+
+  // Notifications tab: add-reminder inline form state
+  const [showAddReminder, setShowAddReminder]   = useState(false);
+  const [reminderMessage, setReminderMessage]   = useState('');
+  const [reminderTime, setReminderTime]         = useState('');
+  const [reminderRecurring, setReminderRecurring] = useState(false);
+
+  // Time picker state: which picker is open + its current Date value
+  const [pickerTarget, setPickerTarget]   = useState(null); // 'todos' | 'habits' | 'custom'
+  const [pickerDate, setPickerDate]       = useState(new Date());
+
+  // ─── Derived state helpers ─────────────────────────────────────────────────
+
+  const hiddenSections = state.hiddenSections || [];
+
+  // Weekend mode schedule
+  const weekendSchedule = state.weekendModeSchedule || {
+    enabled: false,
+    startDay: 5,
+    startTime: '17:00',
+    endDay: 1,
+    endTime: '09:00',
+  };
+
+  // Notification settings
+  const notifSettings = state.notificationSettings || {
+    habits: { enabled: false, time: '21:00' },
+    todos: { enabled: false, mode: 'overdue', time: '09:00' },
+    custom: [],
+  };
+  const customReminders = notifSettings.custom || [];
+
+  // ─── Handlers ──────────────────────────────────────────────────────────────
 
   function saveName() {
     setState((s) => ({ ...s, userName: nameInput.trim() }));
+    showToast('Name saved');
   }
 
   function saveWeatherLocation() {
-    setState((s) => ({ ...s, weatherLocation: weatherLocationInput.trim() }));
+    setState((s) => ({ ...s, weatherLocation: weatherLocationInput.trim(), weatherCoords: null }));
+    showToast('Location saved');
+  }
+
+  async function useDeviceLocation() {
+    setLocationBusy(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        showAlert({ title: 'Location blocked', message: 'Please enable location access for Gather in your device settings.', buttons: [{ text: 'OK' }] });
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const [place] = await Location.reverseGeocodeAsync({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+      const city = place?.city || place?.subregion || place?.region || '';
+      if (!city) { showToast('Could not detect city'); return; }
+      setWeatherLocationInput(city);
+      setState((s) => ({ ...s, weatherLocation: city, weatherCoords: null }));
+      showToast(`Location set to ${city}`);
+    } catch {
+      showToast('Could not get location');
+    } finally {
+      setLocationBusy(false);
+    }
   }
 
   function toggleSection(key) {
     setState((s) => {
       const hidden = s.hiddenSections || [];
-      const next = hidden.includes(key) ? hidden.filter((k) => k !== key) : [...hidden, key];
+      const next = hidden.includes(key)
+        ? hidden.filter((k) => k !== key)
+        : [...hidden, key];
       return { ...s, hiddenSections: next };
     });
   }
@@ -64,45 +169,506 @@ export default function SettingsScreen() {
     setState((s) => ({ ...s, weekendMode: value }));
   }
 
+  function updateWeekendSchedule(updates) {
+    setState((s) => ({
+      ...s,
+      weekendModeSchedule: { ...(s.weekendModeSchedule || {}), ...updates },
+    }));
+  }
+
+  function updateNotifHabits(updates) {
+    setState((s) => ({
+      ...s,
+      notificationSettings: {
+        ...(s.notificationSettings || {}),
+        habits: { ...(s.notificationSettings?.habits || {}), ...updates },
+      },
+    }));
+  }
+
+  function updateNotifTodos(updates) {
+    setState((s) => ({
+      ...s,
+      notificationSettings: {
+        ...(s.notificationSettings || {}),
+        todos: { ...(s.notificationSettings?.todos || {}), ...updates },
+      },
+    }));
+  }
+
+  function addCustomReminder() {
+    const message = reminderMessage.trim();
+    const time = reminderTime.trim();
+    if (!message) return;
+    if (!time) { showAlert({ title: 'Set a time', message: 'Please tap the time button to choose a time for this reminder.', buttons: [{ text: 'OK' }] }); return; }
+
+    const newReminder = {
+      id: `rem${Date.now()}`,
+      message,
+      time,
+      recurring: reminderRecurring,
+      enabled: true,
+    };
+
+    setState((s) => ({
+      ...s,
+      notificationSettings: {
+        ...(s.notificationSettings || {}),
+        custom: [...(s.notificationSettings?.custom || []), newReminder],
+      },
+    }));
+
+    setReminderMessage('');
+    setReminderTime('');
+    setReminderRecurring(false);
+    setShowAddReminder(false);
+    setPickerTarget(null);
+    showToast('Reminder added');
+  }
+
+  function deleteCustomReminder(id) {
+    setState((s) => ({
+      ...s,
+      notificationSettings: {
+        ...(s.notificationSettings || {}),
+        custom: (s.notificationSettings?.custom || []).filter((r) => r.id !== id),
+      },
+    }));
+  }
+
+  // ─── Time picker helpers ────────────────────────────────────────────────────
+
+  function timeStringToDate(hhmm) {
+    const [h, m] = (hhmm || '09:00').split(':').map(Number);
+    const d = new Date();
+    d.setHours(h, m, 0, 0);
+    return d;
+  }
+
+  function dateToTimeString(date) {
+    const h = date.getHours().toString().padStart(2, '0');
+    const m = date.getMinutes().toString().padStart(2, '0');
+    return `${h}:${m}`;
+  }
+
+  function openPicker(target, currentTime) {
+    setPickerDate(timeStringToDate(currentTime));
+    setPickerTarget(target);
+  }
+
+  function onPickerChange(event, selectedDate) {
+    if (Platform.OS === 'android') setPickerTarget(null);
+    if (!selectedDate || event.type === 'dismissed') return;
+    const timeStr = dateToTimeString(selectedDate);
+    if (pickerTarget === 'todos')  updateNotifTodos({ time: timeStr });
+    if (pickerTarget === 'habits') updateNotifHabits({ time: timeStr });
+    if (pickerTarget === 'custom') setReminderTime(timeStr);
+    if (Platform.OS === 'ios') setPickerDate(selectedDate);
+  }
+
+  // ─── Notification scheduling ────────────────────────────────────────────────
+
+  async function requestNotifPermission() {
+    const { status } = await Notifications.requestPermissionsAsync();
+    return status === 'granted';
+  }
+
+  async function scheduleAllNotifications() {
+    const granted = await requestNotifPermission();
+    if (!granted) {
+      showAlert({ title: 'Notifications blocked', message: 'Please enable notifications for Gather in your device settings.', buttons: [{ text: 'OK' }] });
+      return;
+    }
+    await Notifications.cancelAllScheduledNotificationsAsync();
+
+    const settings = state.notificationSettings || {};
+
+    if (settings.todos?.enabled && settings.todos?.time) {
+      const [h, m] = settings.todos.time.split(':').map(Number);
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'Tasks reminder',
+          body: settings.todos.mode === 'digest' ? "Here's your daily task digest." : 'You have overdue or due tasks today.',
+        },
+        trigger: { type: Notifications.SchedulableTriggerInputTypes.DAILY, hour: h, minute: m },
+      });
+    }
+
+    if (settings.habits?.enabled && settings.habits?.time) {
+      const [h, m] = settings.habits.time.split(':').map(Number);
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'Habits reminder',
+          body: "Don't forget to log your habits today!",
+        },
+        trigger: { type: Notifications.SchedulableTriggerInputTypes.DAILY, hour: h, minute: m },
+      });
+    }
+
+    for (const reminder of settings.custom || []) {
+      if (!reminder.enabled || !reminder.time) continue;
+      const [h, m] = reminder.time.split(':').map(Number);
+      await Notifications.scheduleNotificationAsync({
+        content: { title: 'Reminder', body: reminder.message },
+        trigger: reminder.recurring
+          ? { type: Notifications.SchedulableTriggerInputTypes.DAILY, hour: h, minute: m }
+          : { type: Notifications.SchedulableTriggerInputTypes.CALENDAR, hour: h, minute: m, repeats: false },
+      });
+    }
+  }
+
   function resetData() {
-    Alert.alert(
-      'Reset all data',
-      'This will permanently delete all your tasks, journals, habits, and settings. This cannot be undone.',
-      [
+    showAlert({
+      title: 'Reset all data',
+      message: 'This will permanently delete all your tasks, journals, habits, and settings. This cannot be undone.',
+      buttons: [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Reset', style: 'destructive',
-          onPress: () => setState(() => ({
-            userName: '',
-            currentlyConsuming: [],
-            checkIns: [],
-            workTodos: {},
-            workNotes: {},
-            workLists: [{ id: 'personal', name: 'Personal', colorIndex: 0, isWork: false }],
-            focusItems: [],
-            focusDate: '',
-            habits: [],
-            habitLog: {},
-            checkinSortOrder: 'newest',
-            weekendMode: false,
-            hiddenSections: [],
-            sectionOrder: ['quote', 'top3', 'work', 'checkin', 'consuming'],
-            theme: 'light',
-            palette: 'warm',
-          })),
+          text: 'Reset',
+          style: 'destructive',
+          onPress: () =>
+            setState(() => ({
+              userName: '',
+              currentlyConsuming: [],
+              checkIns: [],
+              workTodos: {},
+              workNotes: {},
+              workLists: [{ id: 'personal', name: 'Personal', colorIndex: 0, isWork: false }],
+              focusItems: [],
+              focusDate: '',
+              habits: [],
+              habitLog: {},
+              checkinSortOrder: 'newest',
+              weekendMode: false,
+              weekendModeSchedule: { enabled: false, startDay: 5, startTime: '17:00', endDay: 1, endTime: '09:00' },
+              hiddenSections: [],
+              homeCardOrder: HOME_CARD_KEYS,
+              notificationSettings: {
+                habits: { enabled: false, time: '21:00' },
+                todos: { enabled: false, mode: 'overdue', time: '09:00' },
+                custom: [],
+              },
+              theme: 'light',
+              palette: 'default',
+            })),
         },
-      ]
+      ],
+    });
+  }
+
+  // ─── Sync helpers ──────────────────────────────────────────────────────────
+
+  async function openSyncModal(mode) {
+    setSyncModalMode(mode);
+    setSyncUrlInput(state.syncUrl || '');
+    setSyncCodeInput('');
+    scannedRef.current = false;
+    // Request camera permission then go straight to scanner
+    if (!cameraPermission?.granted) {
+      const result = await requestCameraPermission();
+      if (!result.granted) {
+        // Permission denied — fall back to manual URL entry
+        setSyncScanning(false);
+        setSyncModalVisible(true);
+        return;
+      }
+    }
+    setSyncScanning(true);
+    setSyncModalVisible(true);
+  }
+
+  function extractBaseAndToken(rawUrl) {
+    try {
+      const parsed = new URL(rawUrl);
+      const token = parsed.searchParams.get('t') || '';
+      parsed.search = '';
+      return { base: parsed.toString().replace(/\/$/, ''), token };
+    } catch {
+      return { base: rawUrl.replace(/\/$/, ''), token: '' };
+    }
+  }
+
+  async function executeSyncGet(url) {
+    const { base, token } = extractBaseAndToken(url);
+    setSyncBusy(true);
+    try {
+      const response = await fetch(`${base}/gather-data`, {
+        method: 'GET',
+        headers: token ? { 'X-Gather-Token': token } : {},
+      });
+      if (response.status === 403) throw new Error('Token mismatch — scan the QR code again to get a fresh link.');
+      if (!response.ok) throw new Error(`Server returned ${response.status}`);
+      const data = await response.json();
+
+      // Merge: desktop wins for shared fields, but mobile wins for any field
+      // where desktop is empty/missing and mobile has real data.
+      const merged = { ...state, ...data, syncUrl: base };
+
+      // Array fields: keep whichever side has more content
+      const ARRAY_FIELDS = ['photos', 'habits', 'checkIns', 'workLists', 'currentlyConsuming',
+        'countdowns', 'quickLinks', 'focusItems', 'hobbies'];
+      for (const field of ARRAY_FIELDS) {
+        const incoming = data[field];
+        const existing = state[field] ?? [];
+        if (!Array.isArray(incoming) || (incoming.length === 0 && existing.length > 0)) {
+          merged[field] = existing;
+        }
+      }
+
+      // Object fields: keep mobile value if desktop is empty or wrong type
+      const OBJECT_FIELDS = ['workTodos', 'workNotes', 'habitLog'];
+      for (const field of OBJECT_FIELDS) {
+        const incoming = data[field];
+        const existing = state[field] ?? {};
+        if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming) ||
+            (Object.keys(incoming).length === 0 && Object.keys(existing).length > 0)) {
+          merged[field] = existing;
+        }
+      }
+
+      // String fields: keep mobile value if desktop is missing or empty and mobile has content
+      if ((!data.notes || data.notes === '') && state.notes) merged.notes = state.notes;
+
+      setState(() => merged);
+
+      setSyncModalVisible(false);
+      showAlert({ title: 'Synced', message: 'Data pulled from desktop successfully.', buttons: [{ text: 'OK' }] });
+    } catch (error) {
+      const msg = error.message?.includes('Network request failed')
+        ? 'Could not reach the desktop app. Make sure both devices are on the same WiFi network and Gather desktop has Sync running.'
+        : (error.message || 'Sync failed. Check the URL and try again.');
+      showAlert({ title: 'Sync failed', message: msg, buttons: [{ text: 'OK' }] });
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  async function executeSyncSend(url) {
+    const { base, token } = extractBaseAndToken(url);
+    setSyncBusy(true);
+    try {
+      const response = await fetch(`${base}/gather-data`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'X-Gather-Token': token } : {}),
+        },
+        body: JSON.stringify(state),
+      });
+      if (response.status === 403) throw new Error('Token mismatch — scan the QR code again to get a fresh link.');
+      if (!response.ok) throw new Error(`Server returned ${response.status}`);
+
+      setState((s) => ({ ...s, syncUrl: base }));
+
+      setSyncModalVisible(false);
+      showAlert({ title: 'Synced', message: 'Data sent to desktop successfully.', buttons: [{ text: 'OK' }] });
+    } catch (error) {
+      const msg = error.message?.includes('Network request failed')
+        ? 'Could not reach the desktop app. Make sure both devices are on the same WiFi network and Gather desktop has Sync running.'
+        : (error.message || 'Sync failed. Check the URL and try again.');
+      showAlert({ title: 'Sync failed', message: msg, buttons: [{ text: 'OK' }] });
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  function handleSyncConfirm() {
+    const base = syncUrlInput.trim().replace(/\/$/, '');
+    const code = syncCodeInput.trim().toUpperCase();
+    if (!base) {
+      showAlert({ title: 'No address', message: 'Enter the server address shown in Gather desktop → Settings → Sync.', buttons: [{ text: 'OK' }] });
+      return;
+    }
+    if (!code) {
+      showAlert({ title: 'No code', message: 'Enter the 6-character code shown below the address in Gather desktop.', buttons: [{ text: 'OK' }] });
+      return;
+    }
+    const url = `${base}?t=${code}`;
+    if (syncModalMode === 'get') {
+      executeSyncGet(url);
+    } else {
+      executeSyncSend(url);
+    }
+  }
+
+  // ─── Render helpers ────────────────────────────────────────────────────────
+
+  function renderSyncModal() {
+    const isGet = syncModalMode === 'get';
+
+    function handleBarcodeScan({ data }) {
+      if (scannedRef.current || syncBusy) return;
+      const url = data.trim().replace(/\/$/, '');
+      if (!url.startsWith('http')) return;
+      scannedRef.current = true;
+      setSyncUrlInput(url);
+      setSyncModalVisible(false);
+      setSyncScanning(false);
+      if (isGet) {
+        executeSyncGet(url);
+      } else {
+        executeSyncSend(url);
+      }
+    }
+
+    return (
+      <Modal
+        visible={syncModalVisible}
+        animationType="slide"
+        onRequestClose={() => { if (!syncBusy) { setSyncModalVisible(false); setSyncScanning(false); } }}
+      >
+        {syncScanning ? (
+          // ── QR Scanner fullscreen ──────────────────────────────────
+          <View style={{ flex: 1, backgroundColor: '#000' }}>
+            <CameraView
+              style={{ flex: 1 }}
+              facing="back"
+              barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+              onBarcodeScanned={handleBarcodeScan}
+            />
+            {/* Overlay frame */}
+            <View style={styles.scanOverlay} pointerEvents="none">
+              <View style={styles.scanFrame} />
+              <Text style={styles.scanHint}>Point at the QR code in Gather desktop</Text>
+            </View>
+            {/* Cancel button */}
+            <TouchableOpacity
+              style={[styles.scanCancel, { bottom: 48 + insets.bottom }]}
+              onPress={() => { setSyncScanning(false); setSyncModalVisible(false); }}
+            >
+              <Text style={styles.scanCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          // ── Manual URL entry (fallback / after scan) ───────────────
+          <KeyboardAvoidingView
+            style={styles.syncModalBackdrop}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <View style={styles.syncModalBox}>
+              <Text style={[styles.sheetTitle, { fontFamily: F.heading, marginBottom: 8 }]}>
+                {isGet ? 'Get from Desktop' : 'Send to Desktop'}
+              </Text>
+              <Text style={[styles.toggleHint, { marginBottom: 16 }]}>
+                Enter the address and code shown in Gather desktop → Settings → Sync.
+              </Text>
+              <Text style={[styles.fieldLabel, { paddingHorizontal: 0, paddingBottom: 6, fontSize: 12 }]}>Server address</Text>
+              <TextInput
+                style={[styles.nameInput, { marginBottom: 12, backgroundColor: C.bg, color: C.text }]}
+                placeholder="http://192.168.x.x:47891"
+                placeholderTextColor={C.textMuted}
+                value={syncUrlInput}
+                onChangeText={setSyncUrlInput}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoFocus
+                keyboardType="url"
+                returnKeyType="next"
+                selectionColor={C.accent}
+                editable={!syncBusy}
+              />
+              <Text style={[styles.fieldLabel, { paddingHorizontal: 0, paddingBottom: 6, fontSize: 12 }]}>6-character code</Text>
+              <TextInput
+                style={[styles.nameInput, { marginBottom: 20, backgroundColor: C.bg, color: C.text, fontFamily: 'monospace', letterSpacing: 4, fontSize: 20, fontWeight: '700' }]}
+                placeholder="A1B2C3"
+                placeholderTextColor={C.textMuted}
+                value={syncCodeInput}
+                onChangeText={(v) => setSyncCodeInput(v.toUpperCase())}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                maxLength={6}
+                keyboardType="default"
+                returnKeyType="done"
+                selectionColor={C.accent}
+                onSubmitEditing={handleSyncConfirm}
+                editable={!syncBusy}
+              />
+              {/* Scan again button */}
+              <TouchableOpacity
+                style={[styles.addReminderCancelBtn, { marginBottom: 12, alignSelf: 'flex-start' }]}
+                onPress={() => { scannedRef.current = false; setSyncScanning(true); }}
+              >
+                <Text style={styles.addReminderCancelText}>📷 Scan QR instead</Text>
+              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10 }}>
+                <TouchableOpacity
+                  style={styles.addReminderCancelBtn}
+                  onPress={() => setSyncModalVisible(false)}
+                  disabled={syncBusy}
+                >
+                  <Text style={styles.addReminderCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.saveBtn, syncBusy && { opacity: 0.5 }]}
+                  onPress={handleSyncConfirm}
+                  disabled={syncBusy}
+                >
+                  <Text style={styles.saveBtnText}>{syncBusy ? 'Syncing…' : isGet ? 'Get' : 'Send'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        )}
+      </Modal>
     );
   }
 
-  const hiddenSections = state.hiddenSections || [];
+  function renderSyncTab() {
+    return (
+      <View>
+        <Text style={styles.sectionDesc}>Share data with the Gather desktop app over WiFi. Open Gather on your desktop, go to Settings → Sync, and tap Start. Then come back here.</Text>
+        <View style={[styles.card, { marginBottom: 20 }]}>
+          <View style={[styles.toggleRow, styles.toggleRowBorder]}>
+            <View style={styles.toggleInfo}>
+              <Text style={styles.toggleLabel}>Get from Desktop</Text>
+              <Text style={styles.toggleHint}>Pull data from your desktop to this device</Text>
+            </View>
+            <TouchableOpacity style={styles.saveBtn} onPress={() => openSyncModal('get')}>
+              <Text style={styles.saveBtnText}>Get</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleInfo}>
+              <Text style={styles.toggleLabel}>Send to Desktop</Text>
+              <Text style={styles.toggleHint}>Push data from this device to your desktop</Text>
+            </View>
+            <TouchableOpacity style={styles.saveBtn} onPress={() => openSyncModal('send')}>
+              <Text style={styles.saveBtnText}>Send</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    );
+  }
 
-  return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.pageTitle}>Settings</Text>
+  function renderUnderlineTabs() {
+    return (
+      <View style={styles.underlineTabs}>
+        {SETTINGS_TABS.map((tab) => {
+          const isActive = activeTab === tab.key;
+          return (
+            <TouchableOpacity
+              key={tab.key}
+              style={[styles.underlineTab, isActive && styles.underlineTabActive]}
+              onPress={() => setActiveTab(tab.key)}
+            >
+              <Text style={[styles.underlineTabText, isActive && styles.underlineTabTextActive]}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    );
+  }
 
-        {/* Profile */}
+  function renderProfileTab() {
+    const activeFontKey = state.fontStyle || 'system';
+    const activeFont    = FONT_OPTIONS[activeFontKey] || FONT_OPTIONS.system;
+
+    return (
+      <View>
+        {/* Name */}
         <Text style={styles.sectionLabel}>PROFILE</Text>
         <View style={styles.card}>
           <Text style={styles.fieldLabel}>Your name</Text>
@@ -122,52 +688,10 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Appearance */}
-        <Text style={[styles.sectionLabel, { marginTop: 28 }]}>APPEARANCE</Text>
-
-        <Text style={styles.subsectionLabel}>COLOUR PALETTE</Text>
-        <View style={styles.paletteGrid}>
-          {Object.entries(PALETTES).map(([key, palette]) => (
-            <TouchableOpacity
-              key={key}
-              style={[styles.paletteItem, state.palette === key && styles.paletteItemActive]}
-              onPress={() => setState((s) => ({ ...s, palette: key }))}
-            >
-              <View style={styles.paletteSwatchRow}>
-                <View style={[styles.paletteDot, { backgroundColor: palette.swatch }]} />
-                <View style={[styles.paletteDot, { backgroundColor: palette.accent }]} />
-                <View style={[styles.paletteDot, { backgroundColor: palette.accentLight }]} />
-              </View>
-              <Text style={[styles.paletteItemLabel, state.palette === key && { color: C.accent, fontWeight: '700' }]}>
-                {palette.label}
-              </Text>
-              {state.palette === key && <Text style={[styles.paletteItemCheck, { color: C.accent }]}>✓</Text>}
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <Text style={[styles.subsectionLabel, { marginTop: 20 }]}>FONT STYLE</Text>
-        <View style={styles.fontRow}>
-          {Object.entries(FONT_OPTIONS).map(([key, font]) => (
-            <TouchableOpacity
-              key={key}
-              style={[styles.fontBtn, state.fontStyle === key && styles.fontBtnActive]}
-              onPress={() => setState((s) => ({ ...s, fontStyle: key }))}
-            >
-              <Text style={[styles.fontBtnSample, font.body ? { fontFamily: font.body } : {}, state.fontStyle === key && { color: C.accent }]}>
-                Aa
-              </Text>
-              <Text style={[styles.fontBtnLabel, state.fontStyle === key && { color: C.accent, fontWeight: '700' }]}>
-                {font.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Location */}
+        {/* Weather location */}
         <Text style={[styles.sectionLabel, { marginTop: 28 }]}>LOCATION</Text>
         <View style={styles.card}>
-          <Text style={styles.fieldLabel}>Weather location</Text>
+          <Text style={styles.fieldLabel}>Location</Text>
           <View style={styles.nameRow}>
             <TextInput
               style={styles.nameInput}
@@ -182,17 +706,215 @@ export default function SettingsScreen() {
               <Text style={styles.saveBtnText}>Save</Text>
             </TouchableOpacity>
           </View>
+          <TouchableOpacity
+            style={[styles.useLocationBtn, locationBusy && { opacity: 0.5 }]}
+            onPress={useDeviceLocation}
+            disabled={locationBusy}
+          >
+            <Text style={styles.useLocationBtnText}>
+              {locationBusy ? 'Detecting…' : '📍 Use my current location'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Sections */}
-        <Text style={[styles.sectionLabel, { marginTop: 28 }]}>SECTIONS</Text>
-        <Text style={styles.sectionHint}>Choose what appears on your home screen and bottom nav.</Text>
+        {/* World Cup Alerts */}
+        <View style={[styles.card, { marginTop: 16 }]}>
+          <View style={styles.toggleRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toggleLabel}>⚽ World Cup Alerts</Text>
+              <Text style={styles.toggleHint}>Show the FIFA World Cup 2026 banner on your home page</Text>
+            </View>
+            <Switch
+              value={!!state.worldCupAlerts}
+              onValueChange={(v) => setState((s) => ({ ...s, worldCupAlerts: v }))}
+              trackColor={{ false: C.border, true: C.accent }}
+              thumbColor="#fff"
+              ios_backgroundColor={C.border}
+            />
+          </View>
+        </View>
+
+        {/* Appearance: palette + font as tappable rows */}
+        <Text style={[styles.sectionLabel, { marginTop: 28 }]}>APPEARANCE</Text>
+
+        {/* Colour palette row */}
+        <TouchableOpacity style={styles.card} onPress={() => setPaletteModalOpen(true)}>
+          <View style={styles.cardRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              {(() => {
+                const p = PALETTES[state.palette] || PALETTES.default;
+                return (
+                  <View style={{ flexDirection: 'row', gap: 4 }}>
+                    <View style={[styles.paletteDot, { backgroundColor: p.swatch }]} />
+                    <View style={[styles.paletteDot, { backgroundColor: p.accent }]} />
+                    <View style={[styles.paletteDot, { backgroundColor: p.accentLight }]} />
+                  </View>
+                );
+              })()}
+              <Text style={[styles.cardRowLabel, { fontFamily: F.body }]}>
+                {(PALETTES[state.palette] || PALETTES.default).label}
+              </Text>
+            </View>
+            <Text style={{ color: C.textFaint, fontSize: 18 }}>›</Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* Font row — tappable, opens modal */}
+        <TouchableOpacity style={[styles.card, { marginTop: 8 }]} onPress={() => setFontModalOpen(true)}>
+          <View style={styles.cardRow}>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={[styles.cardRowLabel, { fontFamily: F.body }]}>
+                {activeFont.label}
+              </Text>
+              <Text
+                style={{ fontSize: 13, color: C.textMuted, fontFamily: activeFont.body || undefined }}
+                numberOfLines={1}
+              >
+                The quick brown fox
+              </Text>
+            </View>
+            <Text style={{ color: C.textFaint, fontSize: 18 }}>›</Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* Palette picker — BottomSheet */}
+        <BottomSheet visible={paletteModalOpen} onClose={() => setPaletteModalOpen(false)} backgroundColor={C.bg} fullHeight>
+          <View style={styles.sheetHeader}>
+            <Text style={[styles.sheetTitle, { fontFamily: F.heading }]}>Colour Palette</Text>
+          </View>
+          <ScrollView contentContainerStyle={styles.paletteList}>
+            {(() => {
+              const standard = Object.entries(PALETTES).filter(([, p]) => !p.accessible);
+              const accessible = Object.entries(PALETTES).filter(([, p]) => p.accessible);
+              return (
+                <>
+                  {standard.map(([key, palette]) => {
+                    const isActive = state.palette === key;
+                    return (
+                      <TouchableOpacity key={key} style={[styles.paletteOption, isActive && { borderColor: C.accent, backgroundColor: C.accentLight }]}
+                        onPress={() => { setState((s) => ({ ...s, palette: key })); setPaletteModalOpen(false); }}>
+                        <View style={{ flexDirection: 'row', gap: 4 }}>
+                          <View style={[styles.paletteDotSm, { backgroundColor: palette.swatch }]} />
+                          <View style={[styles.paletteDotSm, { backgroundColor: palette.accent }]} />
+                          <View style={[styles.paletteDotSm, { backgroundColor: palette.accentLight }]} />
+                        </View>
+                        <Text style={[styles.paletteName, { color: isActive ? C.accent : C.text, fontFamily: isActive ? F.heading : F.body }]}>{palette.label}</Text>
+                        {isActive && <Text style={{ color: C.accent, marginLeft: 'auto', fontSize: 16 }}>✓</Text>}
+                      </TouchableOpacity>
+                    );
+                  })}
+                  <View style={styles.accessibleDivider}>
+                    <Text style={styles.accessibleLabel}>👁  ACCESSIBLE</Text>
+                  </View>
+                  {accessible.map(([key, palette]) => {
+                    const isActive = state.palette === key;
+                    return (
+                      <TouchableOpacity key={key} style={[styles.paletteOption, isActive && { borderColor: C.accent, backgroundColor: C.accentLight }]}
+                        onPress={() => { setState((s) => ({ ...s, palette: key })); setPaletteModalOpen(false); }}>
+                        <View style={{ flexDirection: 'row', gap: 4 }}>
+                          <View style={[styles.paletteDotSm, { backgroundColor: palette.swatch }]} />
+                          <View style={[styles.paletteDotSm, { backgroundColor: palette.accent }]} />
+                          <View style={[styles.paletteDotSm, { backgroundColor: palette.accentLight }]} />
+                        </View>
+                        <Text style={[styles.paletteName, { color: isActive ? C.accent : C.text, fontFamily: isActive ? F.heading : F.body }]}>{palette.label}</Text>
+                        {isActive && <Text style={{ color: C.accent, marginLeft: 'auto', fontSize: 16 }}>✓</Text>}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </>
+              );
+            })()}
+          </ScrollView>
+        </BottomSheet>
+
+        {/* Font picker — BottomSheet */}
+        <BottomSheet visible={fontModalOpen} onClose={() => setFontModalOpen(false)} backgroundColor={C.bg} fullHeight>
+          <View style={styles.sheetHeader}>
+            <Text style={[styles.sheetTitle, { fontFamily: F.heading }]}>Font Style</Text>
+          </View>
+          <ScrollView contentContainerStyle={styles.paletteList}>
+            {(() => {
+              const standard = Object.entries(FONT_OPTIONS).filter(([, f]) => !f.accessible);
+              const accessible = Object.entries(FONT_OPTIONS).filter(([, f]) => f.accessible);
+              return (
+                <>
+                  {standard.map(([key, font]) => {
+                    const isActive = activeFontKey === key;
+                    return (
+                      <TouchableOpacity key={key} style={[styles.paletteOption, isActive && { borderColor: C.accent, backgroundColor: C.accentLight }]}
+                        onPress={() => { setState((s) => ({ ...s, fontStyle: key })); setFontModalOpen(false); }}>
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <Text style={{ fontSize: 15, color: isActive ? C.accent : C.text, fontFamily: isActive ? (font.heading || undefined) : (font.body || undefined) }}>{font.label}</Text>
+                          <Text style={{ fontSize: 13, color: C.textMuted, fontFamily: font.body || undefined }}>The quick brown fox</Text>
+                        </View>
+                        {isActive && <Text style={{ color: C.accent, fontSize: 16 }}>✓</Text>}
+                      </TouchableOpacity>
+                    );
+                  })}
+                  <View style={styles.accessibleDivider}>
+                    <Text style={styles.accessibleLabel}>👁  ACCESSIBLE</Text>
+                  </View>
+                  {accessible.map(([key, font]) => {
+                    const isActive = activeFontKey === key;
+                    return (
+                      <TouchableOpacity key={key} style={[styles.paletteOption, isActive && { borderColor: C.accent, backgroundColor: C.accentLight }]}
+                        onPress={() => { setState((s) => ({ ...s, fontStyle: key })); setFontModalOpen(false); }}>
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <Text style={{ fontSize: 15, color: isActive ? C.accent : C.text, fontFamily: isActive ? (font.heading || undefined) : (font.body || undefined) }}>{font.label}</Text>
+                          <Text style={{ fontSize: 13, color: C.textMuted, fontFamily: font.body || undefined }}>The quick brown fox</Text>
+                        </View>
+                        {isActive && <Text style={{ color: C.accent, fontSize: 16 }}>✓</Text>}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </>
+              );
+            })()}
+          </ScrollView>
+        </BottomSheet>
+
+        {/* Light/dark theme — plain text buttons, no emoji */}
+        <Text style={[styles.sectionLabel, { marginTop: 28 }]}>THEME</Text>
+        <View style={styles.segmentedControl}>
+          {[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }].map((opt) => (
+            <TouchableOpacity
+              key={opt.value}
+              style={[styles.segmentBtn, state.theme === opt.value && styles.segmentBtnActive]}
+              onPress={() => setState((s) => ({ ...s, theme: opt.value }))}
+            >
+              <Text style={[styles.segmentBtnText, state.theme === opt.value && styles.segmentBtnTextActive]}>
+                {opt.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Danger zone */}
+        <Text style={[styles.sectionLabel, { marginTop: 28 }]}>DANGER ZONE</Text>
+        <View style={[styles.card, styles.dangerCard]}>
+          <TouchableOpacity onPress={resetData}>
+            <Text style={styles.dangerBtn}>Reset all data…</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  function renderSectionsTab() {
+    return (
+      <View>
+        {/* Home cards visibility */}
+        <Text style={styles.sectionLabel}>HOME CARDS</Text>
+        <Text style={styles.sectionDesc}>Choose which cards appear on your home screen.</Text>
         <View style={styles.card}>
-          {Object.entries(SECTION_LABELS).map(([key, { label, hint }], i, arr) => (
-            <View key={key} style={[styles.toggleRow, i < arr.length - 1 && styles.toggleRowBorder]}>
+          {HOME_CARD_KEYS.map((key, i) => (
+            <View
+              key={key}
+              style={[styles.toggleRow, i < HOME_CARD_KEYS.length - 1 && styles.toggleRowBorder]}
+            >
               <View style={styles.toggleInfo}>
-                <Text style={styles.toggleLabel}>{label}</Text>
-                <Text style={styles.toggleHint}>{hint}</Text>
+                <Text style={styles.toggleLabel}>{HOME_CARD_LABELS[key]}</Text>
+                <Text style={styles.toggleHint}>{HOME_CARD_DESCRIPTIONS[key]}</Text>
               </View>
               <Switch
                 value={!hiddenSections.includes(key)}
@@ -204,49 +926,22 @@ export default function SettingsScreen() {
           ))}
         </View>
 
-        {/* Reorder Sections */}
-        <Text style={[styles.sectionLabel, { marginTop: 28 }]}>REORDER HOME SECTIONS</Text>
-        <Text style={styles.sectionHint}>Long-press and drag to reorder.</Text>
-        <TouchableOpacity
-          style={[styles.card, styles.reorderCard]}
-          onPress={() => setReorderingSections(!reorderingSections)}
-        >
-          <Text style={styles.reorderToggleText}>
-            {reorderingSections ? '✓ Done reordering' : '≡ Reorder sections…'}
-          </Text>
-        </TouchableOpacity>
+      </View>
+    );
+  }
 
-        {reorderingSections && orderedSections.length > 0 && (
-          <View style={[styles.card, { marginTop: 0 }]}>
-            <DraggableFlatList
-              data={orderedSections}
-              onDragEnd={({ data }) => reorderSections(data)}
-              keyExtractor={(item) => item.key}
-              scrollEnabled={false}
-              renderItem={({ item, drag, isActive }) => (
-                <ScaleDecorator>
-                  <TouchableOpacity
-                    style={[styles.reorderItem, isActive && styles.reorderItemActive]}
-                    onLongPress={drag}
-                    delayLongPress={100}
-                  >
-                    <Text style={styles.reorderItemEmoji}>{item.emoji}</Text>
-                    <Text style={styles.reorderItemLabel}>{item.label}</Text>
-                    <Text style={styles.reorderItemHandle}>⋮⋮</Text>
-                  </TouchableOpacity>
-                </ScaleDecorator>
-              )}
-            />
-          </View>
-        )}
-
-        {/* Modes */}
-        <Text style={[styles.sectionLabel, { marginTop: 28 }]}>MODES</Text>
+  function renderModesTab() {
+    return (
+      <View>
+        <Text style={styles.sectionLabel}>MODES</Text>
         <View style={styles.card}>
+          {/* Weekend / OOO mode toggle */}
           <View style={styles.toggleRow}>
             <View style={styles.toggleInfo}>
               <Text style={styles.toggleLabel}>Weekend / OOO Mode</Text>
-              <Text style={styles.toggleHint}>Hides work-tagged lists from Tasks and home</Text>
+              <Text style={styles.toggleHint}>
+                Hides lists tagged as work in My Lists — great if you use Gather for both work and home.
+              </Text>
             </View>
             <Switch
               value={!!state.weekendMode}
@@ -255,28 +950,299 @@ export default function SettingsScreen() {
               thumbColor="#fff"
             />
           </View>
-          <View style={[styles.toggleRow, { borderTopWidth: 1, borderTopColor: C.border }]}>
+
+          {/* Auto-schedule sub-section (only when weekendMode is on) */}
+          {!!state.weekendMode && (
+            <View style={{ borderTopWidth: 1, borderTopColor: C.border }}>
+              <View style={[styles.toggleRow, { paddingTop: 12 }]}>
+                <View style={styles.toggleInfo}>
+                  <Text style={styles.toggleLabel}>Auto-schedule</Text>
+                  <Text style={styles.toggleHint}>Turn Weekend Mode on and off automatically.</Text>
+                </View>
+                <Switch
+                  value={!!weekendSchedule.enabled}
+                  onValueChange={(v) => updateWeekendSchedule({ enabled: v })}
+                  trackColor={{ false: C.border, true: C.accent }}
+                  thumbColor="#fff"
+                />
+              </View>
+
+              {/* Turns on / off selectors (only when auto-schedule is enabled) */}
+              {!!weekendSchedule.enabled && (
+                <View style={styles.scheduleFields}>
+                  {/* Turns on */}
+                  <View style={styles.scheduleRow}>
+                    <Text style={styles.scheduleRowLabel}>Turns on</Text>
+                    <View style={styles.dayPills}>
+                      {DAYS_OF_WEEK.map((day, index) => (
+                        <TouchableOpacity
+                          key={day}
+                          style={[styles.dayPill, weekendSchedule.startDay === index && styles.dayPillActive]}
+                          onPress={() => updateWeekendSchedule({ startDay: index })}
+                        >
+                          <Text style={[styles.dayPillText, weekendSchedule.startDay === index && styles.dayPillTextActive]}>
+                            {day}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    <TextInput
+                      style={styles.timeInput}
+                      value={weekendSchedule.startTime || '17:00'}
+                      onChangeText={(v) => updateWeekendSchedule({ startTime: v })}
+                      keyboardType="numbers-and-punctuation"
+                      placeholder="17:00"
+                      placeholderTextColor={C.textFaint}
+                    />
+                  </View>
+
+                  {/* Turns off */}
+                  <View style={[styles.scheduleRow, { marginTop: 10 }]}>
+                    <Text style={styles.scheduleRowLabel}>Turns off</Text>
+                    <View style={styles.dayPills}>
+                      {DAYS_OF_WEEK.map((day, index) => (
+                        <TouchableOpacity
+                          key={day}
+                          style={[styles.dayPill, weekendSchedule.endDay === index && styles.dayPillActive]}
+                          onPress={() => updateWeekendSchedule({ endDay: index })}
+                        >
+                          <Text style={[styles.dayPillText, weekendSchedule.endDay === index && styles.dayPillTextActive]}>
+                            {day}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    <TextInput
+                      style={styles.timeInput}
+                      value={weekendSchedule.endTime || '09:00'}
+                      onChangeText={(v) => updateWeekendSchedule({ endTime: v })}
+                      keyboardType="numbers-and-punctuation"
+                      placeholder="09:00"
+                      placeholderTextColor={C.textFaint}
+                    />
+                  </View>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  function renderTimePicker() {
+    if (!pickerTarget) return null;
+    return (
+      <DateTimePicker
+        value={pickerDate}
+        mode="time"
+        is24Hour
+        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+        onChange={onPickerChange}
+      />
+    );
+  }
+
+  function TimeButton({ time, onPress }) {
+    return (
+      <TouchableOpacity style={styles.timeBtn} onPress={onPress}>
+        <Text style={styles.timeBtnText}>{time}</Text>
+      </TouchableOpacity>
+    );
+  }
+
+  function renderNotificationsTab() {
+    const habitsEnabled  = !!notifSettings.habits?.enabled;
+    const todosEnabled   = !!notifSettings.todos?.enabled;
+    const todosMode      = notifSettings.todos?.mode || 'overdue';
+    const canAddReminder = customReminders.length < 6;
+
+    return (
+      <View>
+        <Text style={styles.sectionLabel}>NOTIFICATIONS</Text>
+        <View style={styles.card}>
+          {/* To-dos digest */}
+          <View style={styles.toggleRow}>
             <View style={styles.toggleInfo}>
-              <Text style={styles.toggleLabel}>Dark Mode</Text>
-              <Text style={styles.toggleHint}>Switch to a dark colour scheme</Text>
+              <Text style={styles.toggleLabel}>To-dos</Text>
+              <Text style={styles.toggleHint}>Alert when a task is overdue or due today.</Text>
             </View>
             <Switch
-              value={state.theme === 'dark'}
-              onValueChange={(v) => setState((s) => ({ ...s, theme: v ? 'dark' : 'light' }))}
+              value={todosEnabled}
+              onValueChange={(v) => updateNotifTodos({ enabled: v })}
               trackColor={{ false: C.border, true: C.accent }}
               thumbColor="#fff"
             />
           </View>
+
+          {todosEnabled && (
+            <View style={styles.notifSubSection}>
+              <View style={styles.modePills}>
+                {[
+                  { value: 'overdue', label: 'Overdue only' },
+                  { value: 'digest',  label: 'Daily digest' },
+                ].map((option) => (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[styles.modePill, todosMode === option.value && styles.modePillActive]}
+                    onPress={() => updateNotifTodos({ mode: option.value })}
+                  >
+                    <Text style={[styles.modePillText, todosMode === option.value && styles.modePillTextActive]}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.timeRow}>
+                <Text style={styles.timeRowLabel}>Time</Text>
+                <TimeButton
+                  time={notifSettings.todos?.time || '09:00'}
+                  onPress={() => openPicker('todos', notifSettings.todos?.time || '09:00')}
+                />
+              </View>
+              {pickerTarget === 'todos' && renderTimePicker()}
+            </View>
+          )}
+
+          <View style={{ borderTopWidth: 1, borderTopColor: C.border }} />
+
+          {/* Habits reminder */}
+          <View style={[styles.toggleRow, { paddingTop: 12 }]}>
+            <View style={styles.toggleInfo}>
+              <Text style={styles.toggleLabel}>Habits reminder</Text>
+              <Text style={styles.toggleHint}>A nudge listing any habits you haven't ticked off.</Text>
+            </View>
+            <Switch
+              value={habitsEnabled}
+              onValueChange={(v) => updateNotifHabits({ enabled: v })}
+              trackColor={{ false: C.border, true: C.accent }}
+              thumbColor="#fff"
+            />
+          </View>
+
+          {habitsEnabled && (
+            <View style={styles.notifSubSection}>
+              <View style={styles.timeRow}>
+                <Text style={styles.timeRowLabel}>Time</Text>
+                <TimeButton
+                  time={notifSettings.habits?.time || '21:00'}
+                  onPress={() => openPicker('habits', notifSettings.habits?.time || '21:00')}
+                />
+              </View>
+              {pickerTarget === 'habits' && renderTimePicker()}
+            </View>
+          )}
+
+          <View style={{ borderTopWidth: 1, borderTopColor: C.border }} />
+
+          {/* Custom reminders */}
+          <View style={[styles.toggleRow, { paddingTop: 12, paddingBottom: 8 }]}>
+            <View style={styles.toggleInfo}>
+              <Text style={styles.toggleLabel}>Custom reminders</Text>
+              <Text style={styles.toggleHint}>
+                Set any reminder you like — recurring or one-off. You can add up to 6.
+              </Text>
+            </View>
+          </View>
+
+          {customReminders.map((reminder) => (
+            <View key={reminder.id} style={styles.reminderRow}>
+              <View style={styles.reminderInfo}>
+                <Text style={styles.reminderMessage}>{reminder.message}</Text>
+                <Text style={styles.reminderMeta}>
+                  {reminder.time}{reminder.recurring ? ' · Recurring' : ''}
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.reminderDeleteBtn} onPress={() => deleteCustomReminder(reminder.id)}>
+                <Text style={styles.reminderDeleteText}>×</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+
+          {showAddReminder && (
+            <View style={styles.addReminderForm}>
+              <TextInput
+                style={styles.addReminderInput}
+                placeholder="Reminder message…"
+                placeholderTextColor={C.textFaint}
+                value={reminderMessage}
+                onChangeText={setReminderMessage}
+              />
+              <View style={[styles.timeRow, { marginTop: 10 }]}>
+                <Text style={styles.timeRowLabel}>Time</Text>
+                <TimeButton
+                  time={reminderTime || 'Set time'}
+                  onPress={() => openPicker('custom', reminderTime || '09:00')}
+                />
+              </View>
+              {pickerTarget === 'custom' && renderTimePicker()}
+              <View style={styles.reminderRecurringRow}>
+                <Text style={styles.toggleLabel}>Recurring</Text>
+                <Switch
+                  value={reminderRecurring}
+                  onValueChange={setReminderRecurring}
+                  trackColor={{ false: C.border, true: C.accent }}
+                  thumbColor="#fff"
+                />
+              </View>
+              <View style={styles.addReminderActions}>
+                <TouchableOpacity
+                  style={styles.addReminderCancelBtn}
+                  onPress={() => {
+                    setShowAddReminder(false);
+                    setReminderMessage('');
+                    setReminderTime('');
+                    setReminderRecurring(false);
+                    setPickerTarget(null);
+                  }}
+                >
+                  <Text style={styles.addReminderCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.saveBtn} onPress={addCustomReminder}>
+                  <Text style={styles.saveBtnText}>Add</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {!showAddReminder && (
+            <TouchableOpacity
+              style={[styles.addReminderBtn, !canAddReminder && styles.addReminderBtnDisabled]}
+              onPress={() => canAddReminder && setShowAddReminder(true)}
+              disabled={!canAddReminder}
+            >
+              <Text style={[styles.addReminderBtnText, !canAddReminder && styles.addReminderBtnTextDisabled]}>
+                + Add reminder
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        {/* Danger zone */}
-        <Text style={[styles.sectionLabel, { marginTop: 28 }]}>DANGER ZONE</Text>
-        <View style={[styles.card, styles.dangerCard]}>
-          <TouchableOpacity onPress={resetData}>
-            <Text style={styles.dangerBtn}>Reset all data…</Text>
-          </TouchableOpacity>
-        </View>
+        {/* Save & Schedule button */}
+        <TouchableOpacity style={[styles.addReminderBtn, { marginTop: 12 }]} onPress={scheduleAllNotifications}>
+          <Text style={styles.addReminderBtnText}>Save & schedule notifications</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
+  // ─── Render ────────────────────────────────────────────────────────────────
+
+  return (
+    <SafeAreaView style={styles.safe} edges={[]}>
+      {renderSyncModal()}
+      <Text style={styles.pageTitle}>Settings</Text>
+      {renderUnderlineTabs()}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {activeTab === 'profile'       && renderProfileTab()}
+        {activeTab === 'sections'      && renderSectionsTab()}
+        {activeTab === 'modes'         && renderModesTab()}
+        {activeTab === 'notifications' && renderNotificationsTab()}
+        {activeTab === 'sync'          && renderSyncTab()}
         <View style={{ height: 32 }} />
       </ScrollView>
     </SafeAreaView>
@@ -285,49 +1251,154 @@ export default function SettingsScreen() {
 
 function makeStyles(C, F = {}) {
   return StyleSheet.create({
-    safe:            { flex: 1, backgroundColor: C.bg },
-    scroll:          { flex: 1 },
-    content:         { padding: 20 },
-    pageTitle:       { fontSize: 32, fontWeight: '700', color: C.text, marginBottom: 24, fontFamily: F.heading },
-    sectionLabel:    { fontSize: 11, fontWeight: '700', color: C.textMuted, letterSpacing: 0.8, marginBottom: 8 },
-    sectionHint:     { fontSize: 13, color: C.textMuted, marginBottom: 12, marginTop: -4 },
-    card:            { backgroundColor: C.bgCard, borderRadius: RADIUS.lg, ...SHADOW.card, overflow: 'hidden' },
-    // Profile
-    fieldLabel:      { fontSize: 13, color: C.textMuted, fontWeight: '500', marginBottom: 8, padding: 16, paddingBottom: 0 },
+    safe:      { flex: 1, backgroundColor: C.bg },
+    scroll:    { flex: 1 },
+    content:   { padding: 20, flexGrow: 1 },
+    pageTitle: { fontSize: 26, color: C.text, marginBottom: 4, paddingHorizontal: 20, paddingTop: 12, fontFamily: F.heading },
+
+    // ─── Underline tabs (scrollable) ──────────────────────────────────
+    underlineTabs:         { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: C.border },
+    underlineTab:          { flex: 1, alignItems: 'center', paddingVertical: 9, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+    underlineTabActive:    { borderBottomColor: C.accent },
+    underlineTabText:      { fontSize: 11, color: C.textMuted, fontFamily: F.body },
+    underlineTabTextActive:{ color: C.accent, fontFamily: F.heading },
+
+    // ─── Shared ───────────────────────────────────────────────────────
+    // ALL section labels use C.textFaint (not C.textMuted)
+    sectionLabel:    { fontSize: 11, fontFamily: F.heading, color: C.textFaint, letterSpacing: 0.8, marginBottom: 4, textTransform: 'uppercase' },
+    sectionDesc:     { fontSize: 13, fontFamily: F.body, color: C.textMuted, marginBottom: 12, lineHeight: 18 },
+    card:            { backgroundColor: C.bgCard, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: C.border, ...SHADOW.card, overflow: 'hidden', marginBottom: 4 },
+    cardRow:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16 },
+    cardRowLabel:    { fontSize: 15, color: C.text, fontFamily: F.body },
+
+    // ─── Profile ──────────────────────────────────────────────────────
+    fieldLabel:      { fontSize: 13, color: C.textMuted, fontFamily: F.body, marginBottom: 8, padding: 16, paddingBottom: 0 },
     nameRow:         { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16, paddingTop: 8 },
-    nameInput:       { flex: 1, backgroundColor: C.bg, borderRadius: RADIUS.md, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: C.text, borderWidth: 1, borderColor: C.border },
+    nameInput:       { flex: 1, backgroundColor: C.bg, borderRadius: RADIUS.md, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: C.text, borderWidth: 1, borderColor: C.border, fontFamily: F.body },
     saveBtn:         { backgroundColor: C.accent, paddingHorizontal: 14, paddingVertical: 10, borderRadius: RADIUS.md },
-    saveBtnText:     { color: '#fff', fontWeight: '600', fontSize: 14 },
-    // Toggle rows
+    saveBtnText:     { color: '#fff', fontFamily: F.heading, fontSize: 14 },
+    useLocationBtn:  { marginTop: 10, paddingVertical: 8, alignItems: 'center', borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border },
+    useLocationBtnText: { fontSize: 13, color: C.textMuted, fontFamily: F.body },
+    // ─── Segmented control (theme) — shared border, no gap ────────────
+    segmentedControl:     { flexDirection: 'row', borderWidth: 1, borderColor: C.border, borderRadius: 8, overflow: 'hidden', marginBottom: 4 },
+    segmentBtn:           { flex: 1, paddingVertical: 10, alignItems: 'center' },
+    segmentBtnActive:     { backgroundColor: C.accentLight },
+    segmentBtnText:       { fontSize: 14, color: C.textMuted, fontFamily: F.body },
+    segmentBtnTextActive: { color: C.accent, fontFamily: F.heading },
+
+    // ─── Palette / font modals ────────────────────────────────────────
+    paletteDot:     { width: 20, height: 20, borderRadius: 10 },
+    paletteDotSm:   { width: 16, height: 16, borderRadius: 8 },
+    paletteList:    { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 32, gap: 8 },
+    paletteOption:  { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 10, borderWidth: 1.5, borderColor: C.border },
+    paletteName:      { fontSize: 14, fontFamily: F.body },
+    sheetHeader:      { paddingTop: 4, paddingBottom: 12 },
+    sheetTitle:       { fontSize: 18, color: C.text },
+    accessibleDivider:{ paddingVertical: 12, paddingHorizontal: 4, flexDirection: 'row', alignItems: 'center', gap: 8 },
+    accessibleLabel:  { fontSize: 11, fontFamily: F.heading, color: C.textFaint, letterSpacing: 0.8 },
+    modalCloseBtn:    { width: 32, height: 32, borderRadius: 16, backgroundColor: C.border, alignItems: 'center', justifyContent: 'center' },
+    modalCloseText:   { fontSize: 14, color: C.textMuted, fontFamily: F.heading },
+
+    // ─── Toggle rows ──────────────────────────────────────────────────
     toggleRow:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14 },
     toggleRowBorder: { borderBottomWidth: 1, borderBottomColor: C.border },
     toggleInfo:      { flex: 1, marginRight: 12 },
-    toggleLabel:     { fontSize: 15, color: C.text, fontWeight: '500', fontFamily: F.body },
-    toggleHint:      { fontSize: 12, color: C.textMuted, marginTop: 2 },
-    // Appearance
-    subsectionLabel:       { fontSize: 11, fontWeight: '600', color: C.textMuted, letterSpacing: 0.6, marginBottom: 10 },
-    paletteGrid:           { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 4 },
-    paletteItem:           { flex: 0.5, backgroundColor: C.bgCard, borderRadius: RADIUS.md, padding: 12, borderWidth: 1, borderColor: C.border, alignItems: 'center' },
-    paletteItemActive:     { borderColor: C.accent, borderWidth: 2 },
-    paletteSwatchRow:      { flexDirection: 'row', gap: 4, marginBottom: 8 },
-    paletteDot:            { width: 24, height: 24, borderRadius: 12 },
-    paletteItemLabel:      { fontSize: 12, fontWeight: '500', color: C.text, textAlign: 'center' },
-    paletteItemCheck:      { fontSize: 14, fontWeight: '700', marginTop: 4 },
-    fontRow:             { flexDirection: 'row', gap: 12 },
-    fontBtn:             { flex: 1, backgroundColor: C.bgCard, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border, padding: 14, alignItems: 'center', ...SHADOW.card },
-    fontBtnActive:       { borderColor: C.accent, backgroundColor: C.accentLight },
-    fontBtnSample:       { fontSize: 24, fontWeight: '700', color: C.text, marginBottom: 4 },
-    fontBtnLabel:        { fontSize: 11, color: C.textMuted },
-    // Reorder sections
-    reorderCard:          { padding: 14, backgroundColor: C.bgCard, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border },
-    reorderToggleText:    { fontSize: 15, fontWeight: '500', color: C.accent },
-    reorderItem:          { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, backgroundColor: C.bgCard, borderBottomWidth: 1, borderBottomColor: C.border },
-    reorderItemActive:    { backgroundColor: C.accentLight, opacity: 0.8 },
-    reorderItemEmoji:     { fontSize: 18, marginRight: 10 },
-    reorderItemLabel:     { flex: 1, fontSize: 15, color: C.text, fontWeight: '500', fontFamily: F.body },
-    reorderItemHandle:    { fontSize: 12, color: C.textMuted, marginLeft: 8 },
-    // Danger
-    dangerCard:           { borderWidth: 1, borderColor: '#FAD4D4' },
-    dangerBtn:            { fontSize: 15, color: C.danger, fontWeight: '500', padding: 16 },
+    toggleLabel:     { fontSize: 15, color: C.text, fontFamily: F.body },
+    toggleHint:      { fontSize: 12, color: C.textMuted, marginTop: 2, fontFamily: F.body },
+
+    // ─── Reorder drag list ────────────────────────────────────────────
+
+    // ─── Weekend schedule ─────────────────────────────────────────────
+    scheduleFields:    { padding: 8, paddingHorizontal: 16, paddingBottom: 14 },
+    scheduleRow:       { gap: 8 },
+    scheduleRowLabel:  { fontSize: 13, color: C.textMuted, fontFamily: F.body, marginBottom: 6 },
+    dayPills:          { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
+    dayPill:           { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, backgroundColor: C.accentLight },
+    dayPillActive:     { backgroundColor: C.accent },
+    dayPillText:       { fontSize: 12, fontFamily: F.body, color: C.accent },
+    dayPillTextActive: { color: '#fff' },
+    timeInput:         { backgroundColor: C.bg, borderRadius: RADIUS.md, paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, color: C.text, borderWidth: 1, borderColor: C.border, alignSelf: 'flex-start', minWidth: 90, fontFamily: F.body },
+    timeRow:           { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    timeRowLabel:      { fontSize: 14, color: C.textMuted, fontFamily: F.body },
+    timeBtn:           { backgroundColor: C.bg, borderRadius: RADIUS.md, paddingHorizontal: 16, paddingVertical: 8, borderWidth: 1, borderColor: C.accent },
+    timeBtnText:       { fontSize: 15, color: C.accent, fontFamily: F.heading },
+
+    // ─── Notifications ────────────────────────────────────────────────
+    notifSubSection:          { paddingHorizontal: 16, paddingBottom: 12, gap: 8 },
+    modePills:                { flexDirection: 'row', gap: 8, marginBottom: 4 },
+    modePill:                 { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, backgroundColor: C.accentLight },
+    modePillActive:           { backgroundColor: C.accent },
+    modePillText:             { fontSize: 13, fontFamily: F.body, color: C.accent },
+    modePillTextActive:       { color: '#fff' },
+    reminderRow:              { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: C.border },
+    reminderInfo:             { flex: 1 },
+    reminderMessage:          { fontSize: 14, color: C.text, fontFamily: F.body },
+    reminderMeta:             { fontSize: 12, color: C.textMuted, marginTop: 2, fontFamily: F.body },
+    reminderDeleteBtn:        { paddingHorizontal: 8, paddingVertical: 4 },
+    reminderDeleteText:       { fontSize: 20, color: C.textMuted, lineHeight: 22 },
+    addReminderBtn:           { margin: 16, marginTop: 8, backgroundColor: C.accent, borderRadius: RADIUS.md, paddingVertical: 12, alignItems: 'center' },
+    addReminderBtnDisabled:   { backgroundColor: C.border },
+    addReminderBtnText:       { color: '#fff', fontFamily: F.heading, fontSize: 15 },
+    addReminderBtnTextDisabled: { color: C.textMuted },
+    addReminderForm:          { padding: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: C.border },
+    addReminderInput:         { backgroundColor: C.bg, borderRadius: RADIUS.md, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: C.text, borderWidth: 1, borderColor: C.border, fontFamily: F.body },
+    reminderRecurringRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 },
+    addReminderActions:       { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 12 },
+    addReminderCancelBtn:     { paddingHorizontal: 14, paddingVertical: 10 },
+    addReminderCancelText:    { fontSize: 14, color: C.textMuted, fontFamily: F.body },
+
+    // ─── Danger ───────────────────────────────────────────────────────
+    dangerCard: { borderWidth: 1, borderColor: '#FAD4D4' },
+    dangerBtn:  { fontSize: 15, color: C.danger, fontFamily: F.body, padding: 16 },
+
+    // ─── Sync modal ───────────────────────────────────────────────────
+    syncModalBackdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.45)',
+      justifyContent: 'flex-end',
+    },
+    syncModalBox: {
+      backgroundColor: C.bgCard,
+      borderTopLeftRadius: RADIUS.lg,
+      borderTopRightRadius: RADIUS.lg,
+      padding: 24,
+      paddingBottom: 36,
+      width: '100%',
+      ...SHADOW.card,
+    },
+    // QR Scanner
+    scanOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 20,
+    },
+    scanFrame: {
+      width: 220,
+      height: 220,
+      borderRadius: 16,
+      borderWidth: 3,
+      borderColor: '#fff',
+    },
+    scanHint: {
+      color: '#fff',
+      fontSize: 14,
+      textAlign: 'center',
+      paddingHorizontal: 32,
+      fontFamily: F.body,
+    },
+    scanCancel: {
+      position: 'absolute',
+      alignSelf: 'center',
+      backgroundColor: 'rgba(255,255,255,0.15)',
+      paddingHorizontal: 28,
+      paddingVertical: 12,
+      borderRadius: 24,
+    },
+    scanCancelText: {
+      color: '#fff',
+      fontSize: 15,
+      fontFamily: F.body,
+    },
   });
 }
