@@ -21,7 +21,7 @@
     "@expo-google-fonts/raleway": "^0.4.2",
     "@expo-google-fonts/source-serif-4": "^0.4.1",
     "@react-native-async-storage/async-storage": "2.2.0",
-    "@react-native-community/datetimepicker": "8.4.4",
+    "@react-native-community/datetimepicker": "^8.4.4",
     "expo": "~54.0.35",
     "expo-camera": "~17.0.10",
     "expo-clipboard": "~8.0.8",
@@ -43,5 +43,8 @@
     "react-native-svg": "15.12.1",
     "react-native-worklets": "^0.5.1"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "babel-preset-expo": "^56.0.15"
+  }
 }
