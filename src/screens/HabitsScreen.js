@@ -29,12 +29,19 @@ const EMOJI_CATEGORIES = {
   'Fun':       ['⭐', '🎮', '🎲', '🎯', '🏆', '🎊', '🎁', '😄'],
 };
 
+function localDateKey(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function todayKey() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateKey(new Date());
 }
 
 function dateKey(d) {
-  return d.toISOString().slice(0, 10);
+  return localDateKey(d);
 }
 
 function isWeekend(date) {
@@ -46,6 +53,25 @@ function getStreak(habitId, habitLog, frequency) {
   const log = habitLog[habitId] || {};
   let streak = 0;
   const d = new Date();
+
+  if (frequency === 'weekly') {
+    // Walk back in 7-day steps; allow ±1 day grace so the streak survives if the
+    // user logs a weekly habit a day late or early
+    d.setDate(d.getDate() - 7);
+    while (streak <= 52) {
+      const hasEntry = [-1, 0, 1].some((offset) => {
+        const check = new Date(d);
+        check.setDate(check.getDate() + offset);
+        return log[dateKey(check)];
+      });
+      if (!hasEntry) break;
+      streak += 1;
+      d.setDate(d.getDate() - 7);
+    }
+    if (log[todayKey()]) streak += 1;
+    return streak;
+  }
+
   // Walk backwards from yesterday (today may or may not be checked)
   d.setDate(d.getDate() - 1);
   while (streak <= 365) {
@@ -181,6 +207,7 @@ export default function HabitsScreen() {
 
   /** Show ⋯ menu with Edit / Delete options. */
   function openHabitMenu(habit) {
+    const streak = getStreak(habit.id, state.habitLog || {}, habit.frequency);
     showAlert({
       title: habit.name,
       buttons: [
@@ -190,10 +217,27 @@ export default function HabitsScreen() {
             setEditingHabit(habit);
             setEditName(habit.name);
             setEditEmoji(habit.emoji);
-            setEditFreq(habit.frequency);
+            setEditFreq(habit.frequency || 'daily');
           },
         },
-        { text: 'Delete', style: 'destructive', onPress: () => deleteHabit(habit.id) },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: () => showAlert({
+            title: 'Delete habit',
+            message: `This will delete "${habit.name}"${streak > 0 ? ` and erase ${streak} days of streak history` : ''}. This cannot be undone.`,
+            buttons: [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Delete', style: 'destructive',
+                onPress: () => setState((s) => {
+                  const newLog = { ...(s.habitLog || {}) };
+                  delete newLog[habit.id];
+                  return { ...s, habits: (s.habits || []).filter((h) => h.id !== habit.id), habitLog: newLog };
+                }),
+              },
+            ],
+          }),
+        },
         { text: 'Cancel', style: 'cancel' },
       ],
     });
@@ -332,6 +376,7 @@ export default function HabitsScreen() {
             value={editName}
             onChangeText={setEditName}
             autoFocus
+            returnKeyType="done"
           />
           <Text style={[styles.fieldLabel, { marginTop: 20 }]}>EMOJI</Text>
           <TouchableOpacity style={styles.emojiPickerBtn} onPress={() => setShowEmojiPicker('edit')}>
@@ -378,6 +423,7 @@ export default function HabitsScreen() {
             value={newName}
             onChangeText={setNewName}
             autoFocus
+            returnKeyType="done"
           />
 
           <Text style={[styles.fieldLabel, { marginTop: 20 }]}>EMOJI</Text>

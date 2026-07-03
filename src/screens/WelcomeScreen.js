@@ -92,6 +92,7 @@ export default function WelcomeScreen() {
         userName: nameInput.trim(),
         theme: selectedTheme,
         palette: s.palette || 'default',
+        hasOnboarded: true,
       }));
     });
   }

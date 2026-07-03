@@ -34,10 +34,17 @@ export const DEFAULT_STATE = {
     todos: { enabled: false, mode: 'overdue', time: '09:00' },
     custom: [],
   },
-  weekendModeSchedule: { enabled: false, onDay: 'friday', onTime: '17:00', offDay: 'monday', offTime: '08:00' },
+  weekendModeSchedule: { enabled: false, startDay: 5, startTime: '17:00', endDay: 1, endTime: '09:00' },
   fontStyle: 'system',
-  // Last-used desktop sync URL — pre-fills the sync modal
   syncUrl: '',
+  hasOnboarded: false,
+  notesList: [],
+  hobbies: [],
+  pinnedTabs: ['Journal', 'Tasks', 'Habits'],
+  worldCupAlerts: false,
+  hasSeenSettingsHint: false,
+  weatherCoords: null,
+  journalPromptEnabled: true,
 };
 
 export async function loadData() {
@@ -45,8 +52,10 @@ export async function loadData() {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
     if (!raw) return { ...DEFAULT_STATE };
     const saved = JSON.parse(raw);
-    // Merge with defaults so new fields are always present
-    return { ...DEFAULT_STATE, ...saved };
+    const merged = { ...DEFAULT_STATE, ...saved };
+    // Infer hasOnboarded for existing users who completed setup before this flag existed
+    if (!merged.hasOnboarded && merged.userName) merged.hasOnboarded = true;
+    return merged;
   } catch {
     return { ...DEFAULT_STATE };
   }
@@ -66,7 +75,7 @@ export function generateId() {
 
 export function seedData(userName) {
   const today = new Date();
-  const fmt = (d) => d.toISOString().slice(0, 10);
+  const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const addDays = (n) => { const d = new Date(today); d.setDate(d.getDate() + n); return fmt(d); };
 
   return {

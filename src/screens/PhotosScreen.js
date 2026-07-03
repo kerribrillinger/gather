@@ -3,11 +3,12 @@ import {
   View, Text, TouchableOpacity, Modal, Image, TextInput,
   Alert, Dimensions, StyleSheet, ScrollView,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useApp, useTheme, useFont } from '../AppContext';
+import { useAlert } from '../AppAlert';
 import { showToast } from '../Toast';
 import { generateId } from '../storage';
 import { RADIUS } from '../theme';
@@ -49,6 +50,8 @@ const THUMB_SIZE = Math.floor((SCREEN_WIDTH - SIDE_PADDING * 2 - GAP * (COLS - 1
 
 export default function PhotosScreen() {
   const { state, setState } = useApp();
+  const showAlert = useAlert();
+  const insets = useSafeAreaInsets();
   const C = useTheme();
   const F = useFont();
   const styles = useMemo(() => makeStyles(C, F), [C, F]);
@@ -66,8 +69,13 @@ export default function PhotosScreen() {
   const photos = state.photos || [];
 
   async function openImagePicker() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      showAlert({ title: 'Permission required', message: 'Please allow photo access in your device settings to add photos.', buttons: [{ text: 'OK' }] });
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: 'Images',
+      mediaTypes: ['images'],
       allowsMultipleSelection: true,
       quality: 0.7,
     });
@@ -116,19 +124,33 @@ export default function PhotosScreen() {
     setCaptionInput('');
   }
 
-  async function deletePhoto(photoId) {
-    const photo = photos.find((p) => p.id === photoId);
-    if (photo) await deletePhotoFromDisk(photo.src);
-    setState((s) => ({ ...s, photos: (s.photos || []).filter((p) => p.id !== photoId) }));
-    setLightboxIndex(-1);
+  function deletePhoto(photoId) {
+    showAlert({
+      title: 'Delete photo',
+      message: 'This will permanently delete the photo. This cannot be undone.',
+      buttons: [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: async () => {
+            const photo = photos.find((p) => p.id === photoId);
+            if (photo) await deletePhotoFromDisk(photo.src);
+            setState((s) => ({ ...s, photos: (s.photos || []).filter((p) => p.id !== photoId) }));
+            setLightboxIndex(-1);
+          },
+        },
+      ],
+    });
   }
 
   function movePhoto(index, direction) {
-    const next = [...photos];
     const target = index + direction;
-    if (target < 0 || target >= next.length) return;
-    [next[index], next[target]] = [next[target], next[index]];
-    setState((s) => ({ ...s, photos: next }));
+    if (target < 0 || target >= photos.length) return;
+    setState((s) => {
+      const next = [...(s.photos || [])];
+      [next[index], next[target]] = [next[target], next[index]];
+      return { ...s, photos: next };
+    });
   }
 
   function lightboxPrev() { setLightboxIndex((i) => Math.max(0, i - 1)); }
@@ -265,6 +287,7 @@ export default function PhotosScreen() {
               placeholderTextColor={C.textFaint}
               value={captionInput}
               onChangeText={setCaptionInput}
+              returnKeyType="done"
             />
           </View>
           <View style={styles.modalFooter}>
@@ -292,7 +315,7 @@ export default function PhotosScreen() {
           onTouchStart={handleLightboxTouchStart}
           onTouchEnd={handleLightboxTouchEnd}
         >
-          <TouchableOpacity style={styles.lightboxClose} onPress={() => setLightboxIndex(-1)}>
+          <TouchableOpacity style={[styles.lightboxClose, { top: insets.top + 12 }]} onPress={() => setLightboxIndex(-1)}>
             <Text style={styles.lightboxCloseText}>✕</Text>
           </TouchableOpacity>
 

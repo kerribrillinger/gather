@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
-  Pressable, StyleSheet, FlatList, Image,
+  Pressable, StyleSheet, FlatList, Image, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -40,14 +40,20 @@ function pickCoverColor(id) {
 }
 
 async function launchImagePicker() {
-  const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ['images'],
-    allowsEditing: true,
-    aspect: [2, 3],
-    quality: 0.8,
-  });
-  if (!result.canceled) return result.assets[0].uri;
-  return null;
+  try {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') return null;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [2, 3],
+      quality: 0.8,
+    });
+    if (!result.canceled) return result.assets[0].uri;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export default function HobbiesScreen() {
@@ -84,10 +90,21 @@ export default function HobbiesScreen() {
   const [editRating,   setEditRating]   = useState(0);
   const [editReview,   setEditReview]   = useState('');
 
-  // Filtered items — no top-level status tab; show all statuses, filter only by type
+  // Normalise a category string to a bare key for comparison.
+  // Handles legacy emoji-prefixed values like "📚 Books" → "Book",
+  // and plural forms like "Books" → "Book".
+  function normaliseCategory(cat) {
+    if (!cat) return 'Other';
+    // Strip leading emoji and whitespace
+    const stripped = cat.replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]+/u, '').trim();
+    // Map known plural/variant labels back to modal chip keys
+    const MAP = { Books: 'Book', Audiobooks: 'Audiobook', Shows: 'Show', Games: 'Game', Films: 'Other', Podcasts: 'Other', Music: 'Other' };
+    return MAP[stripped] || stripped || 'Other';
+  }
+
   const items = (state.currentlyConsuming || []).filter((i) => {
     if (activeType === 'all') return true;
-    return (i.category || 'Other') === activeType;
+    return normaliseCategory(i.category) === activeType;
   });
 
   function addItem() {
@@ -193,6 +210,7 @@ export default function HobbiesScreen() {
   }) {
     return (
       <BottomSheet visible onClose={onClose} backgroundColor={C.bgCard} fullHeight>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={styles.modalHeader}>
           <Text style={styles.modalTitle}>{title}</Text>
           <TouchableOpacity onPress={onClose}>
@@ -200,7 +218,7 @@ export default function HobbiesScreen() {
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={styles.modalBody} contentContainerStyle={{ paddingBottom: 100 }} keyboardShouldPersistTaps="handled">
+        <ScrollView style={styles.modalBody} contentContainerStyle={{ paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
           {/* Cover image — dashed upload box */}
           <Text style={styles.fieldLabel}>COVER IMAGE (optional)</Text>
           <TouchableOpacity
@@ -231,6 +249,7 @@ export default function HobbiesScreen() {
             value={titleValue}
             onChangeText={onTitleChange}
             autoFocus
+            returnKeyType="next"
           />
 
           {/* Author / creator */}
@@ -241,6 +260,7 @@ export default function HobbiesScreen() {
             placeholderTextColor={C.textFaint}
             value={creatorValue}
             onChangeText={onCreatorChange}
+            returnKeyType="done"
           />
 
           {/* Type chips */}
@@ -308,6 +328,7 @@ export default function HobbiesScreen() {
             <Text style={styles.confirmBtnText}>{saveLabel}</Text>
           </TouchableOpacity>
         </View>
+        </KeyboardAvoidingView>
       </BottomSheet>
     );
   }
@@ -414,7 +435,7 @@ export default function HobbiesScreen() {
                   )}
                   {/* Remove button below rating row */}
                   <TouchableOpacity
-                    onPress={(e) => { e.stopPropagation(); deleteItem(item.id); }}
+                    onPress={() => deleteItem(item.id)}
                     style={styles.removeBtn}
                   >
                     <Text style={styles.removeBtnText}>Remove</Text>

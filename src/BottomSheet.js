@@ -8,6 +8,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 export default function BottomSheet({ visible, onClose, children, backgroundColor = '#fff', maxHeight = '90%', fullHeight = false }) {
   const translateY = useRef(new Animated.Value(600)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
   useEffect(() => {
     if (visible) {
@@ -24,7 +26,7 @@ export default function BottomSheet({ visible, onClose, children, backgroundColo
     Animated.parallel([
       Animated.timing(translateY, { toValue: 800, duration: 220, useNativeDriver: true }),
       Animated.timing(backdropOpacity, { toValue: 0, duration: 220, useNativeDriver: true }),
-    ]).start(() => { translateY.setValue(600); onClose(); });
+    ]).start(() => { translateY.setValue(600); onCloseRef.current(); });
   }
 
   const pan = useRef(PanResponder.create({

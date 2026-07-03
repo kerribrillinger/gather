@@ -203,7 +203,7 @@ export default function TasksScreen() {
         ...s.workTodos,
         [currentList.id]: (s.workTodos[currentList.id] || []).map((t) =>
           t.id === editingTodo.id
-            ? { ...t, text: editText.trim(), dueDate: editTodoDueDate, notes: editTodoNotes, important: editTodoImportant }
+            ? { ...t, text: editText.trim(), dueDate: editTodoDueDate, notes: editTodoNotes, important: editTodoImportant, recurrence: t.recurrence }
             : t
         ),
       },
@@ -270,11 +270,16 @@ export default function TasksScreen() {
           text: 'Delete', style: 'destructive',
           onPress: () => {
             setState((s) => {
-              const updated = { ...s };
-              updated.workLists = (s.workLists || []).filter((l) => l.id !== editingList.id);
-              delete updated.workTodos[editingList.id];
-              delete updated.workNotes[editingList.id];
-              return updated;
+              const newTodos = { ...s.workTodos };
+              const newNotes = { ...s.workNotes };
+              delete newTodos[editingList.id];
+              delete newNotes[editingList.id];
+              return {
+                ...s,
+                workLists: (s.workLists || []).filter((l) => l.id !== editingList.id),
+                workTodos: newTodos,
+                workNotes: newNotes,
+              };
             });
             if (activeListId === editingList.id) setActiveListId(null);
             setEditingList(null);
@@ -287,6 +292,7 @@ export default function TasksScreen() {
   async function copyNotes() {
     const notes = state.workNotes?.[currentList?.id] || '';
     await Clipboard.setStringAsync(notes);
+    showToast('Notes copied');
   }
 
   const color = currentList ? LIST_BADGE_COLORS[currentList.colorIndex ?? 0] : LIST_BADGE_COLORS[0];
@@ -350,8 +356,11 @@ export default function TasksScreen() {
       {lists.length === 0 ? (
         <View style={styles.noListsState}>
           <Text style={styles.noListsIcon}>📋</Text>
-          <Text style={styles.noListsTitle}>Create a task list to begin</Text>
+          <Text style={styles.noListsTitle}>No lists yet</Text>
           <Text style={styles.noListsHint}>Organise your tasks into lists{'\n'}to get started</Text>
+          <TouchableOpacity style={[styles.noListsCta, { backgroundColor: C.accent }]} onPress={() => setShowNewList(true)}>
+            <Text style={[styles.noListsCtaText, { fontFamily: F.heading }]}>Create a list</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <ScrollView
@@ -740,6 +749,8 @@ function makeStyles(C, F = {}) {
     noListsIcon:     { fontSize: 48, marginBottom: 16 },
     noListsTitle:    { fontSize: 18, fontFamily: F.heading, color: C.text, marginBottom: 8 },
     noListsHint:     { fontSize: 14, color: C.textMuted, fontFamily: F.body, textAlign: 'center', lineHeight: 22 },
+    noListsCta:      { marginTop: 24, paddingHorizontal: 28, paddingVertical: 12, borderRadius: 24 },
+    noListsCtaText:  { fontSize: 15, color: '#fff' },
     // Tabs
     tabScroll:       { marginHorizontal: -20, marginBottom: 10 },
     tabs:            { paddingHorizontal: 20, gap: 8 },

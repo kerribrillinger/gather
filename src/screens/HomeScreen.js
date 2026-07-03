@@ -210,11 +210,6 @@ export default function HomeScreen({ navigation }) {
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameEditValue, setNameEditValue] = useState(state.userName || '');
-  // Local notes draft — keeps TextInput responsive while debouncing state writes
-  const [notesDraft, setNotesDraft] = useState(state.notes || '');
-  const notesDebounceRef = useRef(null);
-  const notesInputRef = useRef(null);
-  const notesSelectionRef = useRef({ start: 0, end: 0 });
   // IDs of todos just checked on the home card — shown briefly then fade from view
   const [justChecked, setJustChecked] = useState({});
   const [selectedEnjoyingItem, setSelectedEnjoyingItem] = useState(null);
@@ -223,15 +218,12 @@ export default function HomeScreen({ navigation }) {
   const [worldCupDismissed, setWorldCupDismissed] = useState(false);
   const [settingsHintVisible, setSettingsHintVisible] = useState(!state.hasSeenSettingsHint);
   const settingsHintAnim = useRef(new Animated.Value(!state.hasSeenSettingsHint ? 1 : 0)).current;
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
 
   const quote = QUOTES[new Date().getDate() % QUOTES.length];
   const F = useFont();
   const styles = useMemo(() => makeStyles(C, F), [C, F]);
-
-  // Keep notesDraft in sync when state.notes changes from outside this component
-  useEffect(() => {
-    setNotesDraft(state.notes || '');
-  }, [state.notes]);
 
   // Calculate overdue/upcoming tasks
   const allTodos = (state.workLists || [])
@@ -244,7 +236,9 @@ export default function HomeScreen({ navigation }) {
 
   const shouldShowBanner = !bannerDismissed && overdueTodos.length > 0;
 
+  const weatherCoordsRef = useRef(null); // cache geocode result so intervals skip re-geocoding
   useEffect(() => {
+    weatherCoordsRef.current = null; // clear cache when location changes
     async function fetchWeather() {
       if (!state.weatherLocation) {
         setWeather(null);
@@ -252,14 +246,17 @@ export default function HomeScreen({ navigation }) {
         return;
       }
       try {
-        // Step 1: geocode city name → lat/lon via Nominatim (no key required)
-        const geoRes = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(state.weatherLocation.trim())}&format=json&limit=1`,
-          { headers: { 'Accept-Language': 'en', 'User-Agent': 'GatherApp/1.0' } }
-        );
-        const geoData = await geoRes.json();
-        if (!geoData?.length) { setWeatherError(true); setWeather(null); return; }
-        const { lat, lon } = geoData[0];
+        // Step 1: geocode only if we don't have cached coords for this location
+        if (!weatherCoordsRef.current) {
+          const geoRes = await fetch(
+            `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(state.weatherLocation.trim())}&format=json&limit=1`,
+            { headers: { 'Accept-Language': 'en', 'User-Agent': 'GatherApp/1.0' } }
+          );
+          const geoData = await geoRes.json();
+          if (!geoData?.length) { setWeatherError(true); setWeather(null); return; }
+          weatherCoordsRef.current = { lat: geoData[0].lat, lon: geoData[0].lon };
+        }
+        const { lat, lon } = weatherCoordsRef.current;
 
         // Step 2: fetch weather from Open-Meteo (no key required)
         const wxRes = await fetch(
@@ -332,6 +329,7 @@ export default function HomeScreen({ navigation }) {
 
   function dismissSettingsHint() {
     Animated.timing(settingsHintAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
+      if (!mountedRef.current) return;
       setSettingsHintVisible(false);
       setState((s) => ({ ...s, hasSeenSettingsHint: true }));
     });
@@ -349,7 +347,8 @@ export default function HomeScreen({ navigation }) {
   );
 
   // --- Habits calculations ---
-  const today = new Date().toISOString().slice(0, 10);
+  const _now = new Date();
+  const today = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}-${String(_now.getDate()).padStart(2, '0')}`;
   const todayIsWeekend = isWeekend(new Date());
   const allHabits = state.habits || [];
   const applicableHabits = allHabits.filter((h) => !(h.frequency === 'weekday' && todayIsWeekend));
@@ -373,6 +372,7 @@ export default function HomeScreen({ navigation }) {
   // --- Section renderers ---
 
   function renderQuoteSection() {
+    if ((state.hiddenSections || []).includes('quote')) return null;
     return (
       <View style={[styles.card, styles.quoteCard]} key="quote">
         <View style={styles.quoteInner}>
@@ -387,23 +387,26 @@ export default function HomeScreen({ navigation }) {
   }
 
   function renderTop3Section() {
+    if ((state.hiddenSections || []).includes('top3')) return null;
     return (
       <View style={styles.section} key="top3">
         <Text style={styles.sectionTitle}>TODAY'S TOP 3</Text>
         <View style={styles.card}>
-          {(state.focusItems || []).map((item) => (
-            <View key={item.id} style={styles.focusRow}>
-              <Pressable style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }} onPress={() => toggleFocusItem(item.id)}>
+          {(state.focusItems || []).map((item) => {
+            const itemKey = item.id ?? item.text;
+            return (
+            <View key={itemKey} style={styles.focusRow}>
+              <Pressable style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }} onPress={() => toggleFocusItem(itemKey)}>
                 <View style={[styles.focusCheck, item.done && styles.focusCheckDone]}>
                   {item.done && <Text style={styles.focusCheckMark}>✓</Text>}
                 </View>
                 <Text style={[styles.focusText, item.done && styles.focusTextDone]}>{item.text}</Text>
               </Pressable>
-              <TouchableOpacity onPress={() => deleteFocusItem(item.id)} style={{ padding: 4 }}>
+              <TouchableOpacity onPress={() => deleteFocusItem(itemKey)} style={{ padding: 4 }}>
                 <Text style={{ fontSize: 16, color: C.textFaint }}>×</Text>
               </TouchableOpacity>
             </View>
-          ))}
+          )})}
           {(state.focusItems || []).length < 3 && (
             <View style={styles.focusInputRow}>
               <TextInput
@@ -544,67 +547,58 @@ export default function HomeScreen({ navigation }) {
     );
   }
 
-  function wrapNotesSelection(wrapper) {
-    const { start, end } = notesSelectionRef.current;
-    const selected = notesDraft.slice(start, end);
-    const newText = notesDraft.slice(0, start) + `${wrapper}${selected}${wrapper}` + notesDraft.slice(end);
-    setNotesDraft(newText);
-    if (notesDebounceRef.current) clearTimeout(notesDebounceRef.current);
-    notesDebounceRef.current = setTimeout(() => {
-      setState((s) => ({ ...s, notes: newText }));
-    }, 600);
-  }
-
-  function insertNotesBullet() {
-    const { start } = notesSelectionRef.current;
-    const lineStart = notesDraft.lastIndexOf('\n', start - 1) + 1;
-    const newText = notesDraft.slice(0, lineStart) + '• ' + notesDraft.slice(lineStart);
-    setNotesDraft(newText);
-    if (notesDebounceRef.current) clearTimeout(notesDebounceRef.current);
-    notesDebounceRef.current = setTimeout(() => {
-      setState((s) => ({ ...s, notes: newText }));
-    }, 600);
-  }
-
   function renderNotesSection() {
     if ((state.hiddenSections || []).includes('notes')) return null;
+    const recentNotes = (state.notesList || []).slice(0, 3);
     return (
       <View style={styles.section} key="notes">
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>NOTES</Text>
           <TouchableOpacity onPress={() => navigation.navigate('Notes')}>
-            <Text style={styles.seeAll}>Edit</Text>
+            <Text style={styles.seeAll}>See all</Text>
           </TouchableOpacity>
         </View>
         <View style={styles.card}>
-          <View style={styles.notesToolbar}>
-            <TouchableOpacity style={styles.notesToolbarBtn} onPress={() => wrapNotesSelection('**')}>
-              <Text style={[styles.notesToolbarBtnText, { fontFamily: F.heading }]}>B</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.notesToolbarBtn} onPress={() => wrapNotesSelection('_')}>
-              <Text style={[styles.notesToolbarBtnText, { fontFamily: F.italic || F.body, fontStyle: F.italic ? 'normal' : 'italic' }]}>I</Text>
-            </TouchableOpacity>
-            <View style={styles.notesToolbarDivider} />
-            <TouchableOpacity style={styles.notesToolbarBtn} onPress={insertNotesBullet}>
-              <Ionicons name="list-outline" size={16} color={C.textMuted} />
-            </TouchableOpacity>
-          </View>
-          <TextInput
-            ref={notesInputRef}
-            style={styles.notesInput}
-            multiline
-            placeholder="Tap to jot something down…"
-            placeholderTextColor={C.textFaint}
-            value={notesDraft}
-            onSelectionChange={(e) => { notesSelectionRef.current = e.nativeEvent.selection; }}
-            onChangeText={(text) => {
-              setNotesDraft(text);
-              if (notesDebounceRef.current) clearTimeout(notesDebounceRef.current);
-              notesDebounceRef.current = setTimeout(() => {
-                setState((s) => ({ ...s, notes: text }));
-              }, 600);
+          {/* Quick-create row */}
+          <TouchableOpacity
+            style={styles.noteQuickCreate}
+            onPress={() => {
+              const note = { id: generateId(), title: '', body: '', updatedAt: new Date().toISOString() };
+              setState(s => ({ ...s, notesList: [note, ...(s.notesList || [])] }));
+              navigation.navigate('Notes', { openId: note.id });
             }}
-          />
+            activeOpacity={0.7}
+          >
+            <Ionicons name="add-circle-outline" size={18} color={C.accent} />
+            <Text style={[styles.noteQuickCreateText, { color: C.accent }]}>New note…</Text>
+          </TouchableOpacity>
+
+          {recentNotes.length > 0 && (
+            <View style={{ marginTop: 8, gap: 2 }}>
+              {recentNotes.map((note) => {
+                const preview = (note.body || '').replace(/\[msn:[^\]]+\]/g, '').replace(/\*\*|_/g, '').slice(0, 60);
+                const d = note.updatedAt ? new Date(note.updatedAt) : null;
+                const dateLabel = d && !isNaN(d) ? d.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' }) : '';
+                return (
+                  <TouchableOpacity
+                    key={note.id}
+                    style={styles.notePreviewRow}
+                    onPress={() => navigation.navigate('Notes', { openId: note.id })}
+                    activeOpacity={0.7}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.notePreviewTitle} numberOfLines={1}>{note.title || 'Untitled'}</Text>
+                      {!!preview && <Text style={styles.notePreviewBody} numberOfLines={1}>{preview}</Text>}
+                    </View>
+                    <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                      {!!dateLabel && <Text style={styles.notePreviewDate}>{dateLabel}</Text>}
+                      <Ionicons name="chevron-forward" size={14} color={C.textFaint} />
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
         </View>
       </View>
     );
@@ -848,32 +842,36 @@ export default function HomeScreen({ navigation }) {
   function toggleFocusItem(id) {
     setState((s) => ({
       ...s,
-      focusItems: (s.focusItems || []).map((f) => f.id === id ? { ...f, done: !f.done } : f),
+      focusItems: (s.focusItems || []).map((f) => (f.id ?? f.text) === id ? { ...f, done: !f.done } : f),
     }));
   }
 
   function deleteFocusItem(id) {
     setState((s) => ({
       ...s,
-      focusItems: (s.focusItems || []).filter((f) => f.id !== id),
+      focusItems: (s.focusItems || []).filter((f) => (f.id ?? f.text) !== id),
     }));
   }
 
   function toggleTodo(listId, todoId) {
+    let completing = false;
     setState((s) => {
       const todo = (s.workTodos[listId] || []).find((t) => t.id === todoId);
-      const completing = !todo?.completed;
+      completing = !todo?.completed;
       const todos = (s.workTodos[listId] || []).map((t) =>
         t.id === todoId ? { ...t, completed: completing, completedAt: completing ? new Date().toISOString() : null } : t
       );
+      return { ...s, workTodos: { ...s.workTodos, [listId]: todos } };
+    });
+    // Read completing from the updater above — avoids stale closure on state
+    setTimeout(() => {
       if (completing) {
         setJustChecked((prev) => ({ ...prev, [todoId]: true }));
         setTimeout(() => {
           setJustChecked((prev) => { const next = { ...prev }; delete next[todoId]; return next; });
         }, 1200);
       }
-      return { ...s, workTodos: { ...s.workTodos, [listId]: todos } };
-    });
+    }, 0);
   }
 
   // Resolve the ordered section keys, falling back to homeCardOrder default, then
@@ -894,10 +892,11 @@ export default function HomeScreen({ navigation }) {
 
   // ── Home edit mode: build draggable item list from current ordered keys ──
   const editableCards = useMemo(() => {
+    const hidden = state.hiddenSections || [];
     return deduplicatedKeys
-      .filter((key) => HOME_CARD_LABELS[key]) // only show keys we have labels for
+      .filter((key) => HOME_CARD_LABELS[key] && !hidden.includes(key))
       .map((key) => ({ key, label: HOME_CARD_LABELS[key] || key }));
-  }, [deduplicatedKeys]);
+  }, [deduplicatedKeys, state.hiddenSections]);
 
   if (homeEditMode) {
     return (
@@ -910,7 +909,15 @@ export default function HomeScreen({ navigation }) {
           data={editableCards}
           keyExtractor={(item) => item.key}
           onDragEnd={({ data }) => {
-            setState((s) => ({ ...s, homeCardOrder: data.map((d) => d.key) }));
+            setState((s) => {
+              const reordered = data.map((d) => d.key);
+              // Re-append any hidden cards that were excluded from the drag list
+              // so they aren't permanently lost from homeCardOrder
+              const hidden = s.hiddenSections || [];
+              const currentOrder = s.homeCardOrder || [];
+              const hiddenInOrder = currentOrder.filter((k) => hidden.includes(k) && !reordered.includes(k));
+              return { ...s, homeCardOrder: [...reordered, ...hiddenInOrder] };
+            });
           }}
           renderItem={({ item, drag, isActive }) => (
             <ScaleDecorator>
@@ -1193,12 +1200,13 @@ function makeStyles(C, F = {}) {
     habitsCountLabel: { fontSize: 13, color: C.textMuted, fontFamily: F.body },
     habitsBarTrack:   { height: 6, borderRadius: 3, backgroundColor: C.border, overflow: 'hidden' },
     habitsBarFill:    { height: 6, borderRadius: 3, backgroundColor: C.accent },
-    // Notes
-    notesToolbar:        { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8, borderBottomWidth: 1, borderBottomColor: C.border, paddingBottom: 8 },
-    notesToolbarBtn:     { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
-    notesToolbarBtnText: { fontSize: 15, color: C.text },
-    notesToolbarDivider: { width: 1, height: 18, backgroundColor: C.border, marginHorizontal: 2 },
-    notesInput:          { fontSize: 14, color: C.text, minHeight: 80, fontFamily: F.body, lineHeight: 22, textAlignVertical: 'top', backgroundColor: 'transparent' },
+    // Notes preview
+    noteQuickCreate:     { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: C.border, borderStyle: 'dashed', paddingHorizontal: 12 },
+    noteQuickCreateText: { fontSize: 14, fontFamily: F.body },
+    notePreviewRow:   { flexDirection: 'row', alignItems: 'center', paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: C.border, gap: 8 },
+    notePreviewTitle: { fontSize: 14, fontFamily: F.heading, color: C.text },
+    notePreviewBody:  { fontSize: 12, color: C.textMuted, fontFamily: F.body, marginTop: 1 },
+    notePreviewDate:  { fontSize: 11, color: C.textFaint, fontFamily: F.body, flexShrink: 0 },
     // Countdowns
     countdownRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.border },
     countdownLabel:   { fontSize: 14, color: C.text, flex: 1, marginRight: 12, fontFamily: F.body },

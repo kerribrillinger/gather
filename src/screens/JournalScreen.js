@@ -55,7 +55,11 @@ export default function JournalScreen() {
   const [mood, setMood] = useState(null);
   const [body, setBody] = useState('');
   const [promptIndex, setPromptIndex] = useState(new Date().getDate() % PROMPTS.length);
-  const [promptUseActive, setPromptUseActive] = useState(true);
+  const [promptUseActive, setPromptUseActiveLocal] = useState(state.journalPromptEnabled !== false);
+  function setPromptUseActive(val) {
+    setPromptUseActiveLocal(val);
+    setState((s) => ({ ...s, journalPromptEnabled: val }));
+  }
 
   const [editingEntry, setEditingEntry] = useState(null);
   const [editBody, setEditBody] = useState('');

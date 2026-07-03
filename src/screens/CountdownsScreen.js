@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import BottomSheet from '../BottomSheet';
 import { useApp, useTheme, useFont } from '../AppContext';
+import { useAlert } from '../AppAlert';
 import { showToast } from '../Toast';
 import { generateId } from '../storage';
 import { RADIUS, SHADOW } from '../theme';
@@ -31,34 +32,67 @@ function formatDate(isoDate) {
 
 export default function CountdownsScreen() {
   const { state, setState } = useApp();
+  const showAlert = useAlert();
   const C = useTheme();
   const F = useFont();
   const styles = useMemo(() => makeStyles(C, F), [C, F]);
 
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [labelInput, setLabelInput] = useState('');
   const [pickerDate, setPickerDate] = useState(new Date());
   const [showPicker, setShowPicker] = useState(false);
 
   const countdowns = state.countdowns || [];
+  const isEditing = !!editingId;
 
   function openSheet() {
+    setEditingId(null);
     setLabelInput('');
     setPickerDate(new Date());
     setShowPicker(false);
     setSheetOpen(true);
   }
 
-  function handleAdd() {
+  function openEdit(item) {
+    setEditingId(item.id);
+    setLabelInput(item.label);
+    setPickerDate(new Date(item.date));
+    setShowPicker(false);
+    setSheetOpen(true);
+  }
+
+  function handleSave() {
     const trimmed = labelInput.trim();
     if (!trimmed) return;
-    setState((s) => ({ ...s, countdowns: [...(s.countdowns || []), { id: generateId(), label: trimmed, date: pickerDate.toISOString() }] }));
-    showToast('Countdown added');
+    if (isEditing) {
+      setState((s) => ({
+        ...s,
+        countdowns: (s.countdowns || []).map((c) =>
+          c.id === editingId ? { ...c, label: trimmed, date: pickerDate.toISOString() } : c
+        ),
+      }));
+      showToast('Countdown updated');
+    } else {
+      setState((s) => ({ ...s, countdowns: [...(s.countdowns || []), { id: generateId(), label: trimmed, date: pickerDate.toISOString() }] }));
+      showToast('Countdown added');
+    }
     setSheetOpen(false);
   }
 
   function handleDelete(id) {
-    setState((s) => ({ ...s, countdowns: (s.countdowns || []).filter((c) => c.id !== id) }));
+    const item = countdowns.find((c) => c.id === id);
+    showAlert({
+      title: 'Delete countdown',
+      message: `"${item?.label || 'This countdown'}" will be permanently deleted.`,
+      buttons: [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: () => setState((s) => ({ ...s, countdowns: (s.countdowns || []).filter((c) => c.id !== id) })),
+        },
+      ],
+    });
   }
 
   return (
@@ -76,13 +110,13 @@ export default function CountdownsScreen() {
             const { text, overdue, today: isToday } = daysLabel(item.date);
             return (
               <View key={item.id} style={styles.card}>
-                <View style={styles.cardBody}>
+                <TouchableOpacity style={styles.cardBody} onPress={() => openEdit(item)} activeOpacity={0.7}>
                   <Text style={styles.cardLabel}>{item.label}</Text>
                   <Text style={styles.cardDate}>{formatDate(item.date)}</Text>
                   <Text style={[styles.cardDays, overdue && { color: '#E05252' }, isToday && { color: C.accent }]}>
                     {text}
                   </Text>
-                </View>
+                </TouchableOpacity>
                 <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDelete(item.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                   <Text style={styles.deleteBtnText}>×</Text>
                 </TouchableOpacity>
@@ -102,9 +136,9 @@ export default function CountdownsScreen() {
       {/* Add sheet */}
       <BottomSheet visible={sheetOpen} onClose={() => setSheetOpen(false)} backgroundColor={C.bg}>
         <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle}>Add a countdown</Text>
-          <TouchableOpacity style={[styles.sheetSaveBtn, !labelInput.trim() && { opacity: 0.4 }]} onPress={handleAdd} disabled={!labelInput.trim()}>
-            <Text style={styles.sheetSaveBtnText}>Save</Text>
+          <Text style={styles.sheetTitle}>{isEditing ? 'Edit countdown' : 'Add a countdown'}</Text>
+          <TouchableOpacity style={[styles.sheetSaveBtn, !labelInput.trim() && { opacity: 0.4 }]} onPress={handleSave} disabled={!labelInput.trim()}>
+            <Text style={styles.sheetSaveBtnText}>{isEditing ? 'Update' : 'Save'}</Text>
           </TouchableOpacity>
         </View>
         <View style={styles.sheetBody}>
@@ -134,7 +168,6 @@ export default function CountdownsScreen() {
                 if (Platform.OS === 'android') setShowPicker(false);
                 if (selected) setPickerDate(selected);
               }}
-              minimumDate={new Date()}
             />
           )}
           {Platform.OS === 'ios' && showPicker && (

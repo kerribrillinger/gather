@@ -18,6 +18,15 @@ function normaliseUrl(raw) {
   return `https://${trimmed}`;
 }
 
+function isValidUrl(raw) {
+  try {
+    const url = new URL(normaliseUrl(raw));
+    return url.hostname.includes('.');
+  } catch {
+    return false;
+  }
+}
+
 export default function QuickLinksScreen() {
   const { state, setState } = useApp();
   const C = useTheme();
@@ -62,6 +71,10 @@ export default function QuickLinksScreen() {
     const label = labelInput.trim();
     const url = urlInput.trim();
     if (!label || !url) return;
+    if (!isValidUrl(url)) {
+      showAlert({ title: 'Invalid URL', message: 'Please enter a valid web address, e.g. example.com', buttons: [{ text: 'OK' }] });
+      return;
+    }
     const normUrl = normaliseUrl(url);
     if (isEditing) {
       setState((s) => ({
@@ -78,7 +91,18 @@ export default function QuickLinksScreen() {
   }
 
   function handleDelete(id) {
-    setState((s) => ({ ...s, quickLinks: (s.quickLinks || []).filter((l) => l.id !== id) }));
+    const link = quickLinks.find((l) => l.id === id);
+    showAlert({
+      title: 'Delete link',
+      message: `"${link?.label || 'This link'}" will be permanently deleted.`,
+      buttons: [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: () => setState((s) => ({ ...s, quickLinks: (s.quickLinks || []).filter((l) => l.id !== id) })),
+        },
+      ],
+    });
   }
 
   return (

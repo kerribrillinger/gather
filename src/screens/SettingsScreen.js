@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
-  Switch, StyleSheet, Platform, Modal, KeyboardAvoidingView,
+  Switch, StyleSheet, Platform, Modal, KeyboardAvoidingView, Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -11,17 +11,10 @@ import { useApp, useTheme, useFont } from '../AppContext';
 import { useAlert } from '../AppAlert';
 import { showToast } from '../Toast';
 import { RADIUS, SHADOW, PALETTES, FONT_OPTIONS } from '../theme';
-import { saveData } from '../storage';
+import { saveData, DEFAULT_STATE } from '../storage';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
 
 const SETTINGS_TABS = [
   { key: 'profile',       label: 'Profile'       },
@@ -86,9 +79,13 @@ export default function SettingsScreen() {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const scannedRef = useRef(false);
 
-  // Profile tab inputs
+  // Profile tab inputs — sync from state so stale value isn't shown after external name change
   const [nameInput, setNameInput]                         = useState(state.userName || '');
   const [weatherLocationInput, setWeatherLocationInput]   = useState(state.weatherLocation || '');
+
+  // Keep profile inputs in sync with state (e.g. name changed on HomeScreen)
+  React.useEffect(() => { setNameInput(state.userName || ''); }, [state.userName]);
+  React.useEffect(() => { setWeatherLocationInput(state.weatherLocation || ''); }, [state.weatherLocation]);
 
   // Notifications tab: add-reminder inline form state
   const [showAddReminder, setShowAddReminder]   = useState(false);
@@ -158,15 +155,16 @@ export default function SettingsScreen() {
   function toggleSection(key) {
     setState((s) => {
       const hidden = s.hiddenSections || [];
-      const next = hidden.includes(key)
-        ? hidden.filter((k) => k !== key)
-        : [...hidden, key];
+      const isHiding = !hidden.includes(key);
+      const next = isHiding ? [...hidden, key] : hidden.filter((k) => k !== key);
+      showToast(isHiding ? `${HOME_CARD_LABELS[key]} hidden` : `${HOME_CARD_LABELS[key]} shown`);
       return { ...s, hiddenSections: next };
     });
   }
 
   function toggleWeekendMode(value) {
     setState((s) => ({ ...s, weekendMode: value }));
+    showToast(value ? 'Weekend mode on' : 'Weekend mode off');
   }
 
   function updateWeekendSchedule(updates) {
@@ -260,9 +258,11 @@ export default function SettingsScreen() {
     if (Platform.OS === 'android') setPickerTarget(null);
     if (!selectedDate || event.type === 'dismissed') return;
     const timeStr = dateToTimeString(selectedDate);
-    if (pickerTarget === 'todos')  updateNotifTodos({ time: timeStr });
-    if (pickerTarget === 'habits') updateNotifHabits({ time: timeStr });
-    if (pickerTarget === 'custom') setReminderTime(timeStr);
+    if (pickerTarget === 'todos')         updateNotifTodos({ time: timeStr });
+    if (pickerTarget === 'habits')        updateNotifHabits({ time: timeStr });
+    if (pickerTarget === 'custom')        setReminderTime(timeStr);
+    if (pickerTarget === 'scheduleStart') updateWeekendSchedule({ startTime: timeStr });
+    if (pickerTarget === 'scheduleEnd')   updateWeekendSchedule({ endTime: timeStr });
     if (Platform.OS === 'ios') setPickerDate(selectedDate);
   }
 
@@ -273,7 +273,18 @@ export default function SettingsScreen() {
     return status === 'granted';
   }
 
-  async function scheduleAllNotifications() {
+  async function scheduleAllNotifications(overrideSettings) {
+    const settings = overrideSettings || state.notificationSettings || {};
+    const hasEnabled =
+      settings.todos?.enabled ||
+      settings.habits?.enabled ||
+      (settings.custom || []).some((r) => r.enabled);
+
+    if (!hasEnabled) {
+      showToast('No notifications are enabled');
+      return;
+    }
+
     const granted = await requestNotifPermission();
     if (!granted) {
       showAlert({ title: 'Notifications blocked', message: 'Please enable notifications for Gather in your device settings.', buttons: [{ text: 'OK' }] });
@@ -281,7 +292,7 @@ export default function SettingsScreen() {
     }
     await Notifications.cancelAllScheduledNotificationsAsync();
 
-    const settings = state.notificationSettings || {};
+    const androidChannel = Platform.OS === 'android' ? { channelId: 'default' } : {};
 
     if (settings.todos?.enabled && settings.todos?.time) {
       const [h, m] = settings.todos.time.split(':').map(Number);
@@ -289,6 +300,7 @@ export default function SettingsScreen() {
         content: {
           title: 'Tasks reminder',
           body: settings.todos.mode === 'digest' ? "Here's your daily task digest." : 'You have overdue or due tasks today.',
+          ...androidChannel,
         },
         trigger: { type: Notifications.SchedulableTriggerInputTypes.DAILY, hour: h, minute: m },
       });
@@ -300,6 +312,7 @@ export default function SettingsScreen() {
         content: {
           title: 'Habits reminder',
           body: "Don't forget to log your habits today!",
+          ...androidChannel,
         },
         trigger: { type: Notifications.SchedulableTriggerInputTypes.DAILY, hour: h, minute: m },
       });
@@ -308,13 +321,23 @@ export default function SettingsScreen() {
     for (const reminder of settings.custom || []) {
       if (!reminder.enabled || !reminder.time) continue;
       const [h, m] = reminder.time.split(':').map(Number);
-      await Notifications.scheduleNotificationAsync({
-        content: { title: 'Reminder', body: reminder.message },
-        trigger: reminder.recurring
-          ? { type: Notifications.SchedulableTriggerInputTypes.DAILY, hour: h, minute: m }
-          : { type: Notifications.SchedulableTriggerInputTypes.CALENDAR, hour: h, minute: m, repeats: false },
-      });
+      if (reminder.recurring) {
+        await Notifications.scheduleNotificationAsync({
+          content: { title: 'Reminder', body: reminder.message, ...androidChannel },
+          trigger: { type: Notifications.SchedulableTriggerInputTypes.DAILY, hour: h, minute: m },
+        });
+      } else {
+        // One-time: schedule for the next occurrence of this time (today if not yet passed, else tomorrow)
+        const date = new Date();
+        date.setHours(h, m, 0, 0);
+        if (date <= new Date()) date.setDate(date.getDate() + 1);
+        await Notifications.scheduleNotificationAsync({
+          content: { title: 'Reminder', body: reminder.message, ...androidChannel },
+          trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date },
+        });
+      }
     }
+    showToast('Notifications scheduled');
   }
 
   function resetData() {
@@ -328,28 +351,8 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: () =>
             setState(() => ({
-              userName: '',
-              currentlyConsuming: [],
-              checkIns: [],
-              workTodos: {},
-              workNotes: {},
+              ...DEFAULT_STATE,
               workLists: [{ id: 'personal', name: 'Personal', colorIndex: 0, isWork: false }],
-              focusItems: [],
-              focusDate: '',
-              habits: [],
-              habitLog: {},
-              checkinSortOrder: 'newest',
-              weekendMode: false,
-              weekendModeSchedule: { enabled: false, startDay: 5, startTime: '17:00', endDay: 1, endTime: '09:00' },
-              hiddenSections: [],
-              homeCardOrder: HOME_CARD_KEYS,
-              notificationSettings: {
-                habits: { enabled: false, time: '21:00' },
-                todos: { enabled: false, mode: 'overdue', time: '09:00' },
-                custom: [],
-              },
-              theme: 'light',
-              palette: 'default',
             })),
         },
       ],
@@ -360,83 +363,96 @@ export default function SettingsScreen() {
 
   async function openSyncModal(mode) {
     setSyncModalMode(mode);
-    setSyncUrlInput(state.syncUrl || '');
+    setSyncUrlInput('');
     setSyncCodeInput('');
     scannedRef.current = false;
-    // Request camera permission then go straight to scanner
-    if (!cameraPermission?.granted) {
+    // Open QR scanner by default — ensure permission first
+    let granted = cameraPermission?.granted;
+    if (!granted) {
       const result = await requestCameraPermission();
-      if (!result.granted) {
-        // Permission denied — fall back to manual URL entry
-        setSyncScanning(false);
-        setSyncModalVisible(true);
-        return;
-      }
+      granted = result.granted;
     }
-    setSyncScanning(true);
+    setSyncScanning(granted);
     setSyncModalVisible(true);
   }
 
   function extractBaseAndToken(rawUrl) {
-    try {
-      const parsed = new URL(rawUrl);
-      const token = parsed.searchParams.get('t') || '';
-      parsed.search = '';
-      return { base: parsed.toString().replace(/\/$/, ''), token };
-    } catch {
-      return { base: rawUrl.replace(/\/$/, ''), token: '' };
-    }
+    const qIndex = rawUrl.indexOf('?');
+    if (qIndex === -1) return { base: rawUrl.replace(/\/$/, ''), token: '' };
+    const base = rawUrl.slice(0, qIndex).replace(/\/$/, '');
+    const query = rawUrl.slice(qIndex + 1);
+    const tokenMatch = query.match(/(?:^|&)t=([^&]+)/);
+    const token = tokenMatch ? tokenMatch[1] : '';
+    return { base, token };
+  }
+
+  function xhrRequest(method, url, headers, body) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open(method, url, true);
+      if (headers) Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
+      xhr.timeout = 10000;
+      xhr.ontimeout = () => reject(new Error('Connection timed out'));
+      xhr.onerror = () => reject(new Error('Network request failed'));
+      xhr.onload = () => resolve({ status: xhr.status, text: xhr.responseText });
+      xhr.send(body || null);
+    });
   }
 
   async function executeSyncGet(url) {
     const { base, token } = extractBaseAndToken(url);
     setSyncBusy(true);
     try {
-      const response = await fetch(`${base}/gather-data`, {
-        method: 'GET',
-        headers: token ? { 'X-Gather-Token': token } : {},
+      const res = await xhrRequest('GET', `${base}/gather-data`, token ? { 'X-Gather-Token': token } : {});
+      if (res.status === 403) throw new Error('Token mismatch — scan the QR code again to get a fresh link.');
+      if (res.status < 200 || res.status >= 300) throw new Error(`Server returned ${res.status}`);
+      const data = JSON.parse(res.text);
+
+      // Compute merge against current state, save immediately, then commit to React state.
+      // Saving before modal close prevents Android's brief AppState→inactive event (triggered
+      // by modal dismiss) from flushing stateRef before React's updater has run.
+      let merged = null;
+      setState((prev) => {
+        const m = { ...prev, ...data, syncUrl: base };
+
+        const ARRAY_FIELDS = ['photos', 'habits', 'checkIns', 'workLists', 'currentlyConsuming',
+          'countdowns', 'quickLinks', 'focusItems', 'hobbies', 'notesList'];
+        for (const field of ARRAY_FIELDS) {
+          const incoming = data[field];
+          const existing = prev[field] ?? [];
+          if (!Array.isArray(incoming) || (incoming.length === 0 && existing.length > 0)) {
+            m[field] = existing;
+          }
+        }
+
+        const OBJECT_FIELDS = ['workTodos', 'workNotes', 'habitLog'];
+        for (const field of OBJECT_FIELDS) {
+          const incoming = data[field];
+          const existing = prev[field] ?? {};
+          if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming) ||
+              (Object.keys(incoming).length === 0 && Object.keys(existing).length > 0)) {
+            m[field] = existing;
+          }
+        }
+
+        if ((!data.notes || data.notes === '') && prev.notes) m.notes = prev.notes;
+        merged = m;
+        return m;
       });
-      if (response.status === 403) throw new Error('Token mismatch — scan the QR code again to get a fresh link.');
-      if (!response.ok) throw new Error(`Server returned ${response.status}`);
-      const data = await response.json();
 
-      // Merge: desktop wins for shared fields, but mobile wins for any field
-      // where desktop is empty/missing and mobile has real data.
-      const merged = { ...state, ...data, syncUrl: base };
-
-      // Array fields: keep whichever side has more content
-      const ARRAY_FIELDS = ['photos', 'habits', 'checkIns', 'workLists', 'currentlyConsuming',
-        'countdowns', 'quickLinks', 'focusItems', 'hobbies'];
-      for (const field of ARRAY_FIELDS) {
-        const incoming = data[field];
-        const existing = state[field] ?? [];
-        if (!Array.isArray(incoming) || (incoming.length === 0 && existing.length > 0)) {
-          merged[field] = existing;
-        }
-      }
-
-      // Object fields: keep mobile value if desktop is empty or wrong type
-      const OBJECT_FIELDS = ['workTodos', 'workNotes', 'habitLog'];
-      for (const field of OBJECT_FIELDS) {
-        const incoming = data[field];
-        const existing = state[field] ?? {};
-        if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming) ||
-            (Object.keys(incoming).length === 0 && Object.keys(existing).length > 0)) {
-          merged[field] = existing;
-        }
-      }
-
-      // String fields: keep mobile value if desktop is missing or empty and mobile has content
-      if ((!data.notes || data.notes === '') && state.notes) merged.notes = state.notes;
-
-      setState(() => merged);
+      // Persist immediately so the AppState flush during modal close uses the fresh data.
+      if (merged) await saveData(merged);
 
       setSyncModalVisible(false);
       showAlert({ title: 'Synced', message: 'Data pulled from desktop successfully.', buttons: [{ text: 'OK' }] });
     } catch (error) {
-      const msg = error.message?.includes('Network request failed')
-        ? 'Could not reach the desktop app. Make sure both devices are on the same WiFi network and Gather desktop has Sync running.'
-        : (error.message || 'Sync failed. Check the URL and try again.');
+      const isTimeout = error.name === 'AbortError' || error.name === 'TimeoutError' || error.message?.includes('timed out');
+      const isNetwork = error.message?.includes('Network request failed');
+      if (isNetwork || isTimeout) {
+        // Clear stale saved URL so next session doesn't auto-fill a dead address
+        setState(s => ({ ...s, syncUrl: '' }));
+      }
+      const msg = `${error.name}: ${error.message}\n\nURL: ${base}/gather-data\nToken: ${token ? token.slice(0,3)+'...' : 'none'}`;
       showAlert({ title: 'Sync failed', message: msg, buttons: [{ text: 'OK' }] });
     } finally {
       setSyncBusy(false);
@@ -446,26 +462,36 @@ export default function SettingsScreen() {
   async function executeSyncSend(url) {
     const { base, token } = extractBaseAndToken(url);
     setSyncBusy(true);
+    // Read freshest state via setState callback to avoid stale closure
+    let freshState = null;
+    await new Promise(resolve => {
+      setState(s => { freshState = s; resolve(); return s; });
+    });
     try {
-      const response = await fetch(`${base}/gather-data`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'X-Gather-Token': token } : {}),
-        },
-        body: JSON.stringify(state),
+      const body = JSON.stringify({
+        ...freshState,
+        photos: (freshState.photos || []).map(p => ({ ...p, uri: null })),
+        currentlyConsuming: (freshState.currentlyConsuming || []).map(i => ({ ...i, coverUri: null })),
+        hobbies: (freshState.hobbies || []).map(h => ({ ...h, coverUri: null })),
       });
-      if (response.status === 403) throw new Error('Token mismatch — scan the QR code again to get a fresh link.');
-      if (!response.ok) throw new Error(`Server returned ${response.status}`);
+      const res = await xhrRequest('POST', `${base}/gather-data`, {
+        'Content-Type': 'application/json',
+        ...(token ? { 'X-Gather-Token': token } : {}),
+      }, body);
+      if (res.status === 403) throw new Error('Token mismatch — scan the QR code again to get a fresh link.');
+      if (res.status < 200 || res.status >= 300) throw new Error(`Server returned ${res.status}`);
 
       setState((s) => ({ ...s, syncUrl: base }));
 
       setSyncModalVisible(false);
       showAlert({ title: 'Synced', message: 'Data sent to desktop successfully.', buttons: [{ text: 'OK' }] });
     } catch (error) {
-      const msg = error.message?.includes('Network request failed')
-        ? 'Could not reach the desktop app. Make sure both devices are on the same WiFi network and Gather desktop has Sync running.'
-        : (error.message || 'Sync failed. Check the URL and try again.');
+      const isTimeout = error.name === 'AbortError' || error.name === 'TimeoutError' || error.message?.includes('timed out');
+      const isNetwork = error.message?.includes('Network request failed');
+      if (isNetwork || isTimeout) {
+        setState(s => ({ ...s, syncUrl: '' }));
+      }
+      const msg = `${error.name}: ${error.message}\n\nURL: ${base}/gather-data\nToken: ${token ? token.slice(0,3)+'...' : 'none'}`;
       showAlert({ title: 'Sync failed', message: msg, buttons: [{ text: 'OK' }] });
     } finally {
       setSyncBusy(false);
@@ -473,9 +499,10 @@ export default function SettingsScreen() {
   }
 
   function handleSyncConfirm() {
-    const base = syncUrlInput.trim().replace(/\/$/, '');
-    const code = syncCodeInput.trim().toUpperCase();
-    if (!base) {
+    const rawBase = syncUrlInput.trim().replace(/\/$/, '');
+    const { base: cleanBase, token: urlToken } = extractBaseAndToken(rawBase);
+    const code = syncCodeInput.trim().toUpperCase() || urlToken;
+    if (!cleanBase) {
       showAlert({ title: 'No address', message: 'Enter the server address shown in Gather desktop → Settings → Sync.', buttons: [{ text: 'OK' }] });
       return;
     }
@@ -483,7 +510,7 @@ export default function SettingsScreen() {
       showAlert({ title: 'No code', message: 'Enter the 6-character code shown below the address in Gather desktop.', buttons: [{ text: 'OK' }] });
       return;
     }
-    const url = `${base}?t=${code}`;
+    const url = `${cleanBase}?t=${code}`;
     if (syncModalMode === 'get') {
       executeSyncGet(url);
     } else {
@@ -501,14 +528,16 @@ export default function SettingsScreen() {
       const url = data.trim().replace(/\/$/, '');
       if (!url.startsWith('http')) return;
       scannedRef.current = true;
-      setSyncUrlInput(url);
-      setSyncModalVisible(false);
       setSyncScanning(false);
-      if (isGet) {
-        executeSyncGet(url);
-      } else {
-        executeSyncSend(url);
-      }
+      setSyncUrlInput(url);
+      // Small delay so camera closes cleanly before the network request starts
+      setTimeout(() => {
+        if (isGet) {
+          executeSyncGet(url);
+        } else {
+          executeSyncSend(url);
+        }
+      }, 300);
     }
 
     return (
@@ -526,52 +555,79 @@ export default function SettingsScreen() {
               barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
               onBarcodeScanned={handleBarcodeScan}
             />
-            {/* Overlay frame */}
             <View style={styles.scanOverlay} pointerEvents="none">
               <View style={styles.scanFrame} />
               <Text style={styles.scanHint}>Point at the QR code in Gather desktop</Text>
             </View>
-            {/* Cancel button */}
             <TouchableOpacity
               style={[styles.scanCancel, { bottom: 48 + insets.bottom }]}
-              onPress={() => { setSyncScanning(false); setSyncModalVisible(false); }}
+              onPress={() => { setSyncScanning(false); }}
             >
-              <Text style={styles.scanCancelText}>Cancel</Text>
+              <Text style={styles.scanCancelText}>Enter manually instead</Text>
             </TouchableOpacity>
           </View>
         ) : (
-          // ── Manual URL entry (fallback / after scan) ───────────────
+          // ── Choose method or manual entry ─────────────────────────
           <KeyboardAvoidingView
             style={styles.syncModalBackdrop}
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           >
-            <View style={styles.syncModalBox}>
+            <View style={[styles.syncModalBox, { paddingBottom: 24 + insets.bottom }]}>
               <Text style={[styles.sheetTitle, { fontFamily: F.heading, marginBottom: 8 }]}>
                 {isGet ? 'Get from Desktop' : 'Send to Desktop'}
               </Text>
-              <Text style={[styles.toggleHint, { marginBottom: 16 }]}>
-                Enter the address and code shown in Gather desktop → Settings → Sync.
-              </Text>
+
+              {/* Scan QR button + Enter Manually active label */}
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+                <TouchableOpacity
+                  style={{ flex: 1, backgroundColor: C.accent, borderRadius: 10, padding: 14, alignItems: 'center', gap: 4 }}
+                  onPress={async () => {
+                    if (!cameraPermission?.granted) {
+                      const result = await requestCameraPermission();
+                      if (!result.granted) return;
+                    }
+                    scannedRef.current = false;
+                    setSyncScanning(true);
+                  }}
+                >
+                  <Text style={{ fontSize: 22 }}>📷</Text>
+                  <Text style={{ fontFamily: F.heading, color: '#fff', fontSize: 13 }}>Scan QR Code</Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11, textAlign: 'center' }}>Point your camera at the QR code in Gather desktop</Text>
+                </TouchableOpacity>
+                <View style={{ flex: 1, borderWidth: 2, borderColor: C.accent, borderRadius: 10, padding: 14, alignItems: 'center', gap: 4 }}>
+                  <Text style={{ fontSize: 22 }}>⌨️</Text>
+                  <Text style={{ fontFamily: F.heading, color: C.accent, fontSize: 13 }}>Enter Manually</Text>
+                  <Text style={{ color: C.textMuted, fontSize: 11, textAlign: 'center' }}>Type the address and code shown in Gather desktop</Text>
+                </View>
+              </View>
+
+              {/* Manual fields */}
               <Text style={[styles.fieldLabel, { paddingHorizontal: 0, paddingBottom: 6, fontSize: 12 }]}>Server address</Text>
               <TextInput
-                style={[styles.nameInput, { marginBottom: 12, backgroundColor: C.bg, color: C.text }]}
+                style={{ borderWidth: 1, borderColor: C.border, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 16, fontSize: 16, color: C.text, backgroundColor: C.bgCard, marginBottom: 12, fontFamily: F.body }}
                 placeholder="http://192.168.x.x:47891"
-                placeholderTextColor={C.textMuted}
+                placeholderTextColor={C.textFaint}
                 value={syncUrlInput}
-                onChangeText={setSyncUrlInput}
+                onChangeText={(v) => {
+                  // Strip whitespace and ensure http:// prefix
+                  let cleaned = v.trim();
+                  if (cleaned && !cleaned.startsWith('http://') && !cleaned.startsWith('https://')) {
+                    cleaned = 'http://' + cleaned.replace(/^\/+/, '');
+                  }
+                  setSyncUrlInput(cleaned);
+                }}
                 autoCapitalize="none"
                 autoCorrect={false}
-                autoFocus
-                keyboardType="url"
+                keyboardType="default"
                 returnKeyType="next"
                 selectionColor={C.accent}
                 editable={!syncBusy}
               />
               <Text style={[styles.fieldLabel, { paddingHorizontal: 0, paddingBottom: 6, fontSize: 12 }]}>6-character code</Text>
               <TextInput
-                style={[styles.nameInput, { marginBottom: 20, backgroundColor: C.bg, color: C.text, fontFamily: 'monospace', letterSpacing: 4, fontSize: 20, fontWeight: '700' }]}
+                style={{ borderWidth: 1, borderColor: C.border, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 16, fontSize: 22, fontWeight: '700', letterSpacing: 4, color: C.text, backgroundColor: C.bgCard, marginBottom: 20 }}
                 placeholder="A1B2C3"
-                placeholderTextColor={C.textMuted}
+                placeholderTextColor={C.textFaint}
                 value={syncCodeInput}
                 onChangeText={(v) => setSyncCodeInput(v.toUpperCase())}
                 autoCapitalize="characters"
@@ -583,13 +639,6 @@ export default function SettingsScreen() {
                 onSubmitEditing={handleSyncConfirm}
                 editable={!syncBusy}
               />
-              {/* Scan again button */}
-              <TouchableOpacity
-                style={[styles.addReminderCancelBtn, { marginBottom: 12, alignSelf: 'flex-start' }]}
-                onPress={() => { scannedRef.current = false; setSyncScanning(true); }}
-              >
-                <Text style={styles.addReminderCancelText}>📷 Scan QR instead</Text>
-              </TouchableOpacity>
               <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10 }}>
                 <TouchableOpacity
                   style={styles.addReminderCancelBtn}
@@ -726,7 +775,7 @@ export default function SettingsScreen() {
             </View>
             <Switch
               value={!!state.worldCupAlerts}
-              onValueChange={(v) => setState((s) => ({ ...s, worldCupAlerts: v }))}
+              onValueChange={(v) => { setState((s) => ({ ...s, worldCupAlerts: v })); showToast(v ? 'World Cup alerts on' : 'World Cup alerts off'); }}
               trackColor={{ false: C.border, true: C.accent }}
               thumbColor="#fff"
               ios_backgroundColor={C.border}
@@ -792,7 +841,7 @@ export default function SettingsScreen() {
                     const isActive = state.palette === key;
                     return (
                       <TouchableOpacity key={key} style={[styles.paletteOption, isActive && { borderColor: C.accent, backgroundColor: C.accentLight }]}
-                        onPress={() => { setState((s) => ({ ...s, palette: key })); setPaletteModalOpen(false); }}>
+                        onPress={() => { setState((s) => ({ ...s, palette: key })); setPaletteModalOpen(false); showToast(`${palette.label} palette applied`); }}>
                         <View style={{ flexDirection: 'row', gap: 4 }}>
                           <View style={[styles.paletteDotSm, { backgroundColor: palette.swatch }]} />
                           <View style={[styles.paletteDotSm, { backgroundColor: palette.accent }]} />
@@ -810,7 +859,7 @@ export default function SettingsScreen() {
                     const isActive = state.palette === key;
                     return (
                       <TouchableOpacity key={key} style={[styles.paletteOption, isActive && { borderColor: C.accent, backgroundColor: C.accentLight }]}
-                        onPress={() => { setState((s) => ({ ...s, palette: key })); setPaletteModalOpen(false); }}>
+                        onPress={() => { setState((s) => ({ ...s, palette: key })); setPaletteModalOpen(false); showToast(`${palette.label} palette applied`); }}>
                         <View style={{ flexDirection: 'row', gap: 4 }}>
                           <View style={[styles.paletteDotSm, { backgroundColor: palette.swatch }]} />
                           <View style={[styles.paletteDotSm, { backgroundColor: palette.accent }]} />
@@ -842,7 +891,7 @@ export default function SettingsScreen() {
                     const isActive = activeFontKey === key;
                     return (
                       <TouchableOpacity key={key} style={[styles.paletteOption, isActive && { borderColor: C.accent, backgroundColor: C.accentLight }]}
-                        onPress={() => { setState((s) => ({ ...s, fontStyle: key })); setFontModalOpen(false); }}>
+                        onPress={() => { setState((s) => ({ ...s, fontStyle: key })); setFontModalOpen(false); showToast(`${font.label} font applied`); }}>
                         <View style={{ flex: 1, gap: 2 }}>
                           <Text style={{ fontSize: 15, color: isActive ? C.accent : C.text, fontFamily: isActive ? (font.heading || undefined) : (font.body || undefined) }}>{font.label}</Text>
                           <Text style={{ fontSize: 13, color: C.textMuted, fontFamily: font.body || undefined }}>The quick brown fox</Text>
@@ -858,7 +907,7 @@ export default function SettingsScreen() {
                     const isActive = activeFontKey === key;
                     return (
                       <TouchableOpacity key={key} style={[styles.paletteOption, isActive && { borderColor: C.accent, backgroundColor: C.accentLight }]}
-                        onPress={() => { setState((s) => ({ ...s, fontStyle: key })); setFontModalOpen(false); }}>
+                        onPress={() => { setState((s) => ({ ...s, fontStyle: key })); setFontModalOpen(false); showToast(`${font.label} font applied`); }}>
                         <View style={{ flex: 1, gap: 2 }}>
                           <Text style={{ fontSize: 15, color: isActive ? C.accent : C.text, fontFamily: isActive ? (font.heading || undefined) : (font.body || undefined) }}>{font.label}</Text>
                           <Text style={{ fontSize: 13, color: C.textMuted, fontFamily: font.body || undefined }}>The quick brown fox</Text>
@@ -880,13 +929,20 @@ export default function SettingsScreen() {
             <TouchableOpacity
               key={opt.value}
               style={[styles.segmentBtn, state.theme === opt.value && styles.segmentBtnActive]}
-              onPress={() => setState((s) => ({ ...s, theme: opt.value }))}
+              onPress={() => { setState((s) => ({ ...s, theme: opt.value })); showToast(`${opt.label} mode on`); }}
             >
               <Text style={[styles.segmentBtnText, state.theme === opt.value && styles.segmentBtnTextActive]}>
                 {opt.label}
               </Text>
             </TouchableOpacity>
           ))}
+        </View>
+
+        {/* Bug report */}
+        <View style={[styles.card, { marginTop: 28 }]}>
+          <TouchableOpacity onPress={() => Linking.openURL('mailto:gather.app0@gmail.com?subject=Gather%20Bug%20Report%20%C2%B7%20Android&body=What%20were%20you%20doing%20when%20it%20happened%3F%0A%0A%0AWhat%20did%20you%20expect%20vs%20what%20happened%3F%0A%0A')}>
+            <Text style={[styles.dangerBtn, { color: C.accent }]}>🐛 Report a bug</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Danger zone */}
@@ -986,14 +1042,9 @@ export default function SettingsScreen() {
                         </TouchableOpacity>
                       ))}
                     </View>
-                    <TextInput
-                      style={styles.timeInput}
-                      value={weekendSchedule.startTime || '17:00'}
-                      onChangeText={(v) => updateWeekendSchedule({ startTime: v })}
-                      keyboardType="numbers-and-punctuation"
-                      placeholder="17:00"
-                      placeholderTextColor={C.textFaint}
-                    />
+                    <TouchableOpacity style={styles.timeBtn} onPress={() => openPicker('scheduleStart', weekendSchedule.startTime || '17:00')}>
+                      <Text style={styles.timeBtnText}>{weekendSchedule.startTime || '17:00'}</Text>
+                    </TouchableOpacity>
                   </View>
 
                   {/* Turns off */}
@@ -1012,14 +1063,9 @@ export default function SettingsScreen() {
                         </TouchableOpacity>
                       ))}
                     </View>
-                    <TextInput
-                      style={styles.timeInput}
-                      value={weekendSchedule.endTime || '09:00'}
-                      onChangeText={(v) => updateWeekendSchedule({ endTime: v })}
-                      keyboardType="numbers-and-punctuation"
-                      placeholder="09:00"
-                      placeholderTextColor={C.textFaint}
-                    />
+                    <TouchableOpacity style={styles.timeBtn} onPress={() => openPicker('scheduleEnd', weekendSchedule.endTime || '09:00')}>
+                      <Text style={styles.timeBtnText}>{weekendSchedule.endTime || '09:00'}</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
               )}
@@ -1069,7 +1115,11 @@ export default function SettingsScreen() {
             </View>
             <Switch
               value={todosEnabled}
-              onValueChange={(v) => updateNotifTodos({ enabled: v })}
+              onValueChange={(v) => {
+                const merged = { ...notifSettings, todos: { ...notifSettings.todos, enabled: v } };
+                updateNotifTodos({ enabled: v });
+                if (v) scheduleAllNotifications(merged);
+              }}
               trackColor={{ false: C.border, true: C.accent }}
               thumbColor="#fff"
             />
@@ -1114,7 +1164,11 @@ export default function SettingsScreen() {
             </View>
             <Switch
               value={habitsEnabled}
-              onValueChange={(v) => updateNotifHabits({ enabled: v })}
+              onValueChange={(v) => {
+                const merged = { ...notifSettings, habits: { ...notifSettings.habits, enabled: v } };
+                updateNotifHabits({ enabled: v });
+                if (v) scheduleAllNotifications(merged);
+              }}
               trackColor={{ false: C.border, true: C.accent }}
               thumbColor="#fff"
             />

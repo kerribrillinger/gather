@@ -1,6 +1,6 @@
 // Global state context — mirrors how appState works on desktop
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { View, AppState } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import * as Font from 'expo-font';
 import {
@@ -100,7 +100,7 @@ export function AppProvider({ children }) {
 
       // Ensure all array fields are always arrays (guards against bad sync data)
       const ARRAY_FIELDS = ['photos', 'habits', 'checkIns', 'workLists', 'currentlyConsuming',
-        'countdowns', 'quickLinks', 'focusItems', 'hobbies'];
+        'countdowns', 'quickLinks', 'focusItems', 'hobbies', 'notesList'];
       for (const field of ARRAY_FIELDS) {
         if (!Array.isArray(data[field])) data[field] = DEFAULT_STATE[field] ?? [];
       }
@@ -139,7 +139,8 @@ export function AppProvider({ children }) {
       stateRef.current = data;
       setStateRaw(data);
     }).catch(() => {
-      setStateRaw({ ...DEFAULT_STATE });
+      // Keep existing state if load fails to avoid wiping user data
+      setStateRaw((prev) => prev || { ...DEFAULT_STATE });
     });
   }, []);
 
@@ -152,8 +153,27 @@ export function AppProvider({ children }) {
     });
   }
 
+  // Flush on background and reset Top 3 when the app resumes on a new day.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'background' || nextAppState === 'inactive') {
+        if (stateRef.current) saveData(stateRef.current);
+      }
+      if (nextAppState === 'active') {
+        const todayStr = new Date().toDateString();
+        if (stateRef.current && stateRef.current.focusDate !== todayStr) {
+          const next = { ...stateRef.current, focusItems: [], focusDate: todayStr };
+          stateRef.current = next;
+          setStateRaw(next);
+          saveData(next);
+        }
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
   if (!state || !fontsLoaded) return (
-    <View style={{ flex: 1, backgroundColor: '#F5F0E6', alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ flex: 1, backgroundColor: '#F2F0EB', alignItems: 'center', justifyContent: 'center' }}>
       <Svg width={80} height={80} viewBox="0 0 80 80">
         <Circle cx={27} cy={27} r={19} fill="#EDD9A3" />
         <Circle cx={53} cy={27} r={19} fill="#C9A84C" opacity={0.85} />

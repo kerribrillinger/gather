@@ -85,13 +85,14 @@ export function ToastContainer() {
 }
 
 const styles = StyleSheet.create({
-  // Absolutely positioned overlay — sits above content, below modals
+  // Absolutely positioned overlay — zIndex above RN Modal (which uses ~1000000)
   wrapper: {
     position: 'absolute',
     top: 50,
     left: 0,
     right: 0,
-    zIndex: 500,
+    zIndex: 9999999,
+    elevation: 9999999,
     alignItems: 'center',
     pointerEvents: 'none',
   },

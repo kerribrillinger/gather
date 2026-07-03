@@ -1,15 +1,34 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, Modal, StyleSheet,
-  Pressable, Animated, ScrollView, PanResponder, Vibration,
+  Pressable, Animated, ScrollView, PanResponder, Vibration, Platform,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle } from 'react-native-svg';
+import * as Notifications from 'expo-notifications';
 
 import { AppProvider, useApp, useTheme, useFont } from './src/AppContext';
+
+// Set notification handler once at app startup
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+// Android requires a notification channel — without one, notifications are silently dropped
+if (Platform.OS === 'android') {
+  Notifications.setNotificationChannelAsync('default', {
+    name: 'Gather',
+    importance: Notifications.AndroidImportance.HIGH,
+    sound: 'default',
+  });
+}
 import { AppAlertProvider } from './src/AppAlert';
 import { ToastContainer } from './src/Toast';
 import WelcomeScreen    from './src/screens/WelcomeScreen';
@@ -283,10 +302,10 @@ function AppNavigator() {
     }
     const t = setTimeout(() => {
       Animated.parallel([
-        Animated.timing(splashOpacity, { toValue: 0, duration: 300, useNativeDriver: true }),
-        Animated.timing(appFadeIn, { toValue: 1, duration: 350, useNativeDriver: true }),
+        Animated.timing(splashOpacity, { toValue: 0, duration: 500, useNativeDriver: true }),
+        Animated.timing(appFadeIn, { toValue: 1, duration: 600, useNativeDriver: true }),
       ]).start(() => setSplashVisible(false));
-    }, 400);
+    }, 600);
     return () => clearTimeout(t);
   }, []);
 
@@ -294,7 +313,7 @@ function AppNavigator() {
     setState((s) => ({ ...s, theme: s.theme === 'dark' ? 'light' : 'dark' }));
   }
 
-  if (!state?.userName) {
+  if (!state?.hasOnboarded) {
     return (
       <>
         <StatusBar style="dark" backgroundColor={C.bg} />
