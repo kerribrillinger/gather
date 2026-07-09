@@ -413,7 +413,18 @@ export default function SettingsScreen() {
       // by modal dismiss) from flushing stateRef before React's updater has run.
       let merged = null;
       setState((prev) => {
-        const m = { ...prev, ...data, syncUrl: base };
+        const m = {
+          ...prev,
+          ...data,
+          syncUrl: base,
+          // Preserve mobile-only fields that desktop data doesn't know about
+          hasOnboarded: prev.hasOnboarded,
+          userName: prev.userName || data.userName,
+          notificationSettings: prev.notificationSettings,
+          weekendModeSchedule: prev.weekendModeSchedule,
+          pinnedTabs: prev.pinnedTabs,
+          hasSeenSettingsHint: prev.hasSeenSettingsHint,
+        };
 
         const ARRAY_FIELDS = ['photos', 'habits', 'checkIns', 'workLists', 'currentlyConsuming',
           'countdowns', 'quickLinks', 'focusItems', 'hobbies', 'notesList'];
