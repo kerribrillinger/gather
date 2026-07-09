@@ -159,8 +159,16 @@ function isWeekend(date) {
 // Extract the emoji character from a category string like "📚 Book" → "📚"
 function categoryEmoji(category) {
   if (!category) return '✨';
-  // Grab the first grapheme cluster (emoji) from the string
-  const match = category.match(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic})/u);
+  // Extract first emoji using segmenter if available, else regex fallback
+  if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+    const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+    for (const { segment } of seg.segment(category)) {
+      if (/\p{Emoji_Presentation}/u.test(segment) || /\p{Extended_Pictographic}/u.test(segment)) {
+        return segment;
+      }
+    }
+  }
+  const match = category.match(/(\p{Emoji_Presentation}|\p{Extended_Pictographic})/u);
   return match ? match[0] : category.charAt(0);
 }
 

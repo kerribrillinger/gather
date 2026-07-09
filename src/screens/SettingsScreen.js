@@ -417,9 +417,10 @@ export default function SettingsScreen() {
           ...prev,
           ...data,
           syncUrl: base,
-          // Preserve mobile-only fields that desktop data doesn't know about
-          hasOnboarded: prev.hasOnboarded,
-          userName: prev.userName || data.userName,
+          // Preserve mobile-only fields that desktop data doesn't know about.
+          // Always mark as onboarded after a successful sync — data proves setup is done.
+          hasOnboarded: true,
+          userName: prev.userName || data.userName || '',
           notificationSettings: prev.notificationSettings,
           weekendModeSchedule: prev.weekendModeSchedule,
           pinnedTabs: prev.pinnedTabs,
