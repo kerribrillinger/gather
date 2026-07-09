@@ -408,52 +408,47 @@ export default function SettingsScreen() {
       if (res.status < 200 || res.status >= 300) throw new Error(`Server returned ${res.status}`);
       const data = JSON.parse(res.text);
 
-      // Compute merge against current state, save immediately, then commit to React state.
-      // Saving before modal close prevents Android's brief AppState→inactive event (triggered
-      // by modal dismiss) from flushing stateRef before React's updater has run.
-      let merged = null;
-      setState((prev) => {
-        const m = {
-          ...prev,
-          ...data,
-          syncUrl: base,
-          // Preserve mobile-only fields that desktop data doesn't know about.
-          // Always mark as onboarded after a successful sync — data proves setup is done.
-          hasOnboarded: true,
-          userName: prev.userName || data.userName || '',
-          notificationSettings: prev.notificationSettings,
-          weekendModeSchedule: prev.weekendModeSchedule,
-          pinnedTabs: prev.pinnedTabs,
-          hasSeenSettingsHint: prev.hasSeenSettingsHint,
-        };
+      // Build merged object synchronously from current state snapshot so we can
+      // save to AsyncStorage before React reconciles — guards against Android
+      // AppState→inactive flush overwriting with stale data during modal close.
+      const prev = state;
+      const merged = {
+        ...prev,
+        ...data,
+        syncUrl: base,
+        hasOnboarded: true,
+        userName: prev.userName || data.userName || '',
+        notificationSettings: prev.notificationSettings,
+        weekendModeSchedule: prev.weekendModeSchedule,
+        pinnedTabs: prev.pinnedTabs,
+        hasSeenSettingsHint: prev.hasSeenSettingsHint,
+      };
 
-        const ARRAY_FIELDS = ['photos', 'habits', 'checkIns', 'workLists', 'currentlyConsuming',
-          'countdowns', 'quickLinks', 'focusItems', 'hobbies', 'notesList'];
-        for (const field of ARRAY_FIELDS) {
-          const incoming = data[field];
-          const existing = prev[field] ?? [];
-          if (!Array.isArray(incoming) || (incoming.length === 0 && existing.length > 0)) {
-            m[field] = existing;
-          }
+      const ARRAY_FIELDS = ['photos', 'habits', 'checkIns', 'workLists', 'currentlyConsuming',
+        'countdowns', 'quickLinks', 'focusItems', 'hobbies', 'notesList'];
+      for (const field of ARRAY_FIELDS) {
+        const incoming = data[field];
+        const existing = prev[field] ?? [];
+        if (!Array.isArray(incoming) || (incoming.length === 0 && existing.length > 0)) {
+          merged[field] = existing;
         }
+      }
 
-        const OBJECT_FIELDS = ['workTodos', 'workNotes', 'habitLog'];
-        for (const field of OBJECT_FIELDS) {
-          const incoming = data[field];
-          const existing = prev[field] ?? {};
-          if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming) ||
-              (Object.keys(incoming).length === 0 && Object.keys(existing).length > 0)) {
-            m[field] = existing;
-          }
+      const OBJECT_FIELDS = ['workTodos', 'workNotes', 'habitLog'];
+      for (const field of OBJECT_FIELDS) {
+        const incoming = data[field];
+        const existing = prev[field] ?? {};
+        if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming) ||
+            (Object.keys(incoming).length === 0 && Object.keys(existing).length > 0)) {
+          merged[field] = existing;
         }
+      }
 
-        if ((!data.notes || data.notes === '') && prev.notes) m.notes = prev.notes;
-        merged = m;
-        return m;
-      });
+      if ((!data.notes || data.notes === '') && prev.notes) merged.notes = prev.notes;
 
-      // Persist immediately so the AppState flush during modal close uses the fresh data.
-      if (merged) await saveData(merged);
+      // Save to AsyncStorage first, then commit exact merged object to React state.
+      await saveData(merged);
+      setState(() => merged);
 
       setSyncModalVisible(false);
       showAlert({ title: 'Synced', message: 'Data pulled from desktop successfully.', buttons: [{ text: 'OK' }] });
