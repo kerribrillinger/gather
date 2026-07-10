@@ -137,19 +137,18 @@ export default function HabitsScreen() {
   }
 
   function toggleHabit(habitId) {
+    const wasChecked = !!(state.habitLog?.[habitId]?.[today]);
     setState((s) => {
       const log = s.habitLog || {};
       const dayLog = { ...(log[habitId] || {}) };
-      const wasChecked = !!dayLog[today];
       if (wasChecked) {
         delete dayLog[today];
       } else {
         dayLog[today] = true;
-        // Trigger flash only when checking (unchecked → checked)
-        triggerFlash(habitId);
       }
       return { ...s, habitLog: { ...log, [habitId]: dayLog } };
     });
+    if (!wasChecked) triggerFlash(habitId);
   }
 
   function addHabit() {

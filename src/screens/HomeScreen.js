@@ -862,24 +862,20 @@ export default function HomeScreen({ navigation }) {
   }
 
   function toggleTodo(listId, todoId) {
-    let completing = false;
+    const todo = (state.workTodos[listId] || []).find((t) => t.id === todoId);
+    const completing = !todo?.completed;
     setState((s) => {
-      const todo = (s.workTodos[listId] || []).find((t) => t.id === todoId);
-      completing = !todo?.completed;
       const todos = (s.workTodos[listId] || []).map((t) =>
         t.id === todoId ? { ...t, completed: completing, completedAt: completing ? new Date().toISOString() : null } : t
       );
       return { ...s, workTodos: { ...s.workTodos, [listId]: todos } };
     });
-    // Read completing from the updater above — avoids stale closure on state
-    setTimeout(() => {
-      if (completing) {
-        setJustChecked((prev) => ({ ...prev, [todoId]: true }));
-        setTimeout(() => {
-          setJustChecked((prev) => { const next = { ...prev }; delete next[todoId]; return next; });
-        }, 1200);
-      }
-    }, 0);
+    if (completing) {
+      setJustChecked((prev) => ({ ...prev, [todoId]: true }));
+      setTimeout(() => {
+        setJustChecked((prev) => { const next = { ...prev }; delete next[todoId]; return next; });
+      }, 1200);
+    }
   }
 
   // Resolve the ordered section keys, falling back to homeCardOrder default, then

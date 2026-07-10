@@ -57,6 +57,8 @@ const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export default function SettingsScreen() {
   const { state, setState } = useApp();
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const C = useTheme();
   const F = useFont();
   const styles = useMemo(() => makeStyles(C, F), [C, F]);
@@ -255,7 +257,7 @@ export default function SettingsScreen() {
   }
 
   function onPickerChange(event, selectedDate) {
-    if (Platform.OS === 'android') setPickerTarget(null);
+    setPickerTarget(null);
     if (!selectedDate || event.type === 'dismissed') return;
     const timeStr = dateToTimeString(selectedDate);
     if (pickerTarget === 'todos')         updateNotifTodos({ time: timeStr });
@@ -263,7 +265,6 @@ export default function SettingsScreen() {
     if (pickerTarget === 'custom')        setReminderTime(timeStr);
     if (pickerTarget === 'scheduleStart') updateWeekendSchedule({ startTime: timeStr });
     if (pickerTarget === 'scheduleEnd')   updateWeekendSchedule({ endTime: timeStr });
-    if (Platform.OS === 'ios') setPickerDate(selectedDate);
   }
 
   // ─── Notification scheduling ────────────────────────────────────────────────
@@ -408,10 +409,9 @@ export default function SettingsScreen() {
       if (res.status < 200 || res.status >= 300) throw new Error(`Server returned ${res.status}`);
       const data = JSON.parse(res.text);
 
-      // Build merged object synchronously from current state snapshot so we can
-      // save to AsyncStorage before React reconciles — guards against Android
-      // AppState→inactive flush overwriting with stale data during modal close.
-      const prev = state;
+      // Use stateRef.current (not the closure `state`) so any changes made while
+      // the async fetch was in-flight are included, not overwritten.
+      const prev = stateRef.current;
       const merged = {
         ...prev,
         ...data,
