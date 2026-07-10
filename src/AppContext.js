@@ -150,10 +150,17 @@ export function AppProvider({ children }) {
   function setState(updater) {
     setStateRaw((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater };
+      // Update stateRef synchronously inside the updater so the AppState background
+      // flush always sees the latest data, even if it fires before React reconciles.
       stateRef.current = next;
       saveData(next);
       return next;
     });
+    // Also update stateRef immediately so any AppState event that fires between
+    // calling setState and React running the updater uses the correct data.
+    // We compute the next value again here using the last known ref.
+    const immediate = typeof updater === 'function' ? updater(stateRef.current) : { ...stateRef.current, ...updater };
+    stateRef.current = immediate;
   }
 
   // Flush on background and reset Top 3 when the app resumes on a new day.
