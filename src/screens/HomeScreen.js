@@ -830,9 +830,11 @@ export default function HomeScreen({ navigation }) {
     const trimmed = nameEditValue.trim();
     if (trimmed) {
       setState((s) => ({ ...s, userName: trimmed }));
+      setNameEditValue(trimmed);
+    } else {
+      setNameEditValue(state.userName || '');
     }
     setEditingName(false);
-    setNameEditValue(state.userName || '');
   }
 
   function handleCancelNameEdit() {
