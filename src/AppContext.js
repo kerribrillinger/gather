@@ -127,20 +127,23 @@ export function AppProvider({ children }) {
         data.focusDate  = todayStr;
       }
 
-      // Auto-seed sample data if user has a name but nothing added yet
+      // Auto-seed sample data only on true first run (never after a sync or re-open)
       const isEmpty = (!data.habits || data.habits.length === 0)
         && (!data.workTodos?.personal || data.workTodos.personal.length === 0)
         && (!data.countdowns || data.countdowns.length === 0);
-      if (data.userName && isEmpty) {
+      if (data.userName && isEmpty && !data.hasOnboarded) {
         const seed = seedData(data.userName);
         Object.assign(data, seed);
       }
 
-      stateRef.current = data;
-      setStateRaw(data);
+      // Only commit if a sync hasn't already written newer data while we were loading
+      if (!stateRef.current) {
+        stateRef.current = data;
+        setStateRaw(data);
+      }
     }).catch(() => {
       // Keep existing state if load fails to avoid wiping user data
-      setStateRaw((prev) => prev || { ...DEFAULT_STATE });
+      if (!stateRef.current) setStateRaw((prev) => prev || { ...DEFAULT_STATE });
     });
   }, []);
 
